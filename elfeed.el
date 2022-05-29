@@ -226,7 +226,7 @@ USE-CURL is needed since the interpretation depends on if curl is used."
 This macro is anaphoric, with STATUS referring to the status from
 `url-retrieve'/cURL and USE-CURL being the original invoked-value
 of `elfeed-use-curl'."
-  (declare (indent defun))
+  (declare (indent defun) (debug (&define sexp def-body)))
   `(let* ((use-curl elfeed-use-curl) ; capture current value in closure
           (cb (lambda (status) ,@body)))
      (if elfeed-use-curl

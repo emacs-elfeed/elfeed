@@ -875,7 +875,7 @@ expression, matching against entry link, title, and feed title."
 (defmacro elfeed-save-excursion (&rest body)
   "Like `save-mark-and-excursion' around BODY.
 But keep entry, line and column instead of only point."
-  (declare (indent defun))
+  (declare (indent defun) (debug t))
   (cl-with-gensyms (point-pos mark-pos)
     `(let* ((,point-pos (elfeed--save-position))
             (,mark-pos (cons (when-let* ((m (marker-position (mark-marker))))

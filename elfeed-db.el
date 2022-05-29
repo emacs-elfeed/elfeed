@@ -236,7 +236,7 @@ BINDS are the bindings for entry and optionally feed around BODY.
 
   (elfeed-db-visit (entry)
     ...)"
-  (declare (indent defun))
+  (declare (indent defun) (debug ((symbolp &optional symbolp) body)))
   `(catch 'elfeed-db-done
      (prog1 nil
        (elfeed-db-ensure)
@@ -274,6 +274,7 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defmacro elfeed-db-return (&optional value)
   "Use this to exit early and return VALUE from `elfeed-db-visit'."
+  (declare (debug (&optional sexp)))
   `(throw 'elfeed-db-done ,value))
 
 (defun elfeed-db-get-all-tags ()

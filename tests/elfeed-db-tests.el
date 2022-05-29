@@ -59,7 +59,7 @@
 
 (defmacro with-elfeed-test (&rest body)
   "Run BODY with a fresh, empty database that will be destroyed on exit."
-  (declare (indent defun))
+  (declare (indent defun) (debug t))
   `(let* ((elfeed-db nil)
           (elfeed-db-feeds nil)
           (elfeed-db-entries nil)

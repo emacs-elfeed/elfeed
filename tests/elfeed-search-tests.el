@@ -4,6 +4,7 @@
 (require 'elfeed-search)
 
 (defmacro test-search-parse-filter-duration (filter after-days &optional before-days)
+  (declare (debug (stringp numberp &optional numberp)))
   (let ((day (* 24 60 60)))
     `(should (equal ',(cl-concatenate 'list
                                       (when before-days

@@ -660,13 +660,16 @@ called interactively, SAVE is set to t."
 (cl-defun elfeed-make-tagger
     (&key feed-title feed-url feed-author entry-title entry-link
           entry-enclosure entry-content-type after before
-          add remove callback)
+          feed-meta entry-meta add remove callback)
   "Create a function that adds, removes tags or does CALLBACK on matching entries.
 
 FEED-TITLE, FEED-URL, FEED-AUTHOR, ENTRY-TITLE, ENTRY-LINK,
-ENTRY-ENCLOSURE and ENTRY-CONTENT-TYPE
+ENTRY-ENCLOSURE, ENTRY-CONTENT-TYPE
 are regular expressions or a list \(not <regex>\),
-which indicates a negative match.  AFTER and BEFORE are relative times
+which indicates a negative match.  FEED-META and ENTRY-META are
+a list of key and value where car is the key and cadr is value.
+The key and value are matched against the respective meta's.
+AFTER and BEFORE are relative times
 \(see `elfeed-time-duration'\).  Entries must match all provided
 expressions.  If an entry matches, add tags ADD and remove tags
 REMOVE.
@@ -701,10 +704,12 @@ The returned function should be added to `elfeed-new-entry-hook'."
                  (match feed-title  (elfeed-feed-title  feed))
                  (match feed-url    (elfeed-feed-url    feed))
                  (match feed-author (elfeed-feed-author feed))
+                 (match (car feed-meta) (elfeed-meta feed (cadr feed-meta)))
                  (match entry-title (elfeed-entry-title entry))
                  (match entry-link  (elfeed-entry-link  entry))
                  (match entry-content-type (elfeed-entry-content-type entry))
                  (match entry-enclosure (elfeed-entry-enclosures entry))
+                 (match (car entry-meta) (elfeed-meta entry (cadr entry-meta)))
                  (or (not after-time)  (> date (- (float-time) after-time)))
                  (or (not before-time) (< date (- (float-time) before-time))))
             (when add

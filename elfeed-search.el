@@ -552,20 +552,23 @@ never show a relative time."
                                elfeed-search-title-min-width
                                title-width
                                elfeed-search-title-max-width)
-                        :left)))
+                        :left))
+	 (date-width (string-width date))
+	 (title-column-width (string-width title-column)))
     (insert (elfeed-add-properties date
                                    'face 'elfeed-search-date-face
                                    'mouse-face 'highlight
                                    'follow-link [elfeed-date])
-            " "
+            (propertize " " 'display `(space :align-to ,(1+ date-width)))
             (elfeed-add-properties title-column
                                    'face title-faces 'kbd-help title
                                    'mouse-face 'highlight
                                    'follow-link [elfeed-entry]))
     (when feed-title
-      (insert " " (propertize feed-title 'face 'elfeed-search-feed-face
-                              'mouse-face 'highlight
-                              'follow-link [elfeed-feed])))
+      (insert (propertize " " 'display `(space :align-to ,(+ 2 date-width title-column-width)))
+	      (propertize feed-title 'face 'elfeed-search-feed-face
+                          'mouse-face 'highlight
+                          'follow-link [elfeed-feed])))
     (when tags
       (insert " (" (elfeed-search--format-tags tags) ")"))))
 

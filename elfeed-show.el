@@ -208,9 +208,9 @@ The result depends on the value of `elfeed-show-unique-buffers'."
   (let ((buff (get-buffer-create (elfeed-show--buffer-name entry))))
     (with-current-buffer buff
       (elfeed-show-mode)
-      (setq elfeed-show-entry entry)
-      (elfeed-show-refresh))
-    (funcall elfeed-show-entry-switch buff)))
+      (setq elfeed-show-entry entry))
+    (funcall elfeed-show-entry-switch buff)
+    (elfeed-show-refresh)))
 
 (defun elfeed-show-next (&optional n)
   "Show the Nth next item in the elfeed-search buffer."

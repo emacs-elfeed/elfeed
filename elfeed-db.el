@@ -85,6 +85,12 @@ This is a chance to add custom tags to new entries.")
 (defvar elfeed-db-unload-hook ()
   "Hook to run immediately after `elfeed-db-unload'.")
 
+(defvar elfeed-db-gc-trace-functions ()
+  "A list of functions called to determine which elfeed-ref's are reachable.
+Each function is called with an elfeed-entry and should return a
+single elfeed-ref or a list of them, which will be considered in
+use by `elfeed-db-gc'.")
+
 ;; Data model:
 
 (cl-defstruct (elfeed-feed (:constructor elfeed-feed--create))
@@ -585,7 +591,14 @@ If STATS-P is true, return the space cleared in bytes."
     (with-elfeed-db-visit (entry _)
       (let ((content (elfeed-entry-content entry)))
         (when (elfeed-ref-p content)
-          (setf (gethash (elfeed-ref-id content) table) t))))
+          (setf (gethash (elfeed-ref-id content) table) t)))
+      (dolist (trace-function elfeed-db-gc-trace-functions)
+	(let ((refs (funcall trace-function entry)))
+	  (unless (listp refs)
+	    (setf refs (list refs)))
+	  (dolist (ref refs)
+	    (when (elfeed-ref-p ref)
+	      (setf (gethash (elfeed-ref-id ref) table) t))))))
     (cl-loop for id hash-keys of table using (hash-value used)
              for used-p = (or used (member id '("." "..")))
              when (and (not used-p) stats-p)

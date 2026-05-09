@@ -1253,7 +1253,7 @@ state of the db for when `desktop-auto-save-timeout' is enabled."
 (define-obsolete-function-alias 'elfeed-search-quit-window
   'quit-window "3.4.2")
 (define-obsolete-function-alias 'elfeed-search-update--force
-  'elfeed-search-update-delay "3.4.2")
+  'elfeed-search--update-force "3.4.2")
 
 (provide 'elfeed-search)
 ;;; elfeed-search.el ends here

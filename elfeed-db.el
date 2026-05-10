@@ -408,7 +408,12 @@ Runs `elfeed-db-unload-hook' after unloading the database."
 
 (defun elfeed-meta (thing key &optional default)
   "Access metadata for THING (entry, feed) under KEY.
-Return DEFAULT if unavailable."
+Return DEFAULT if unavailable.  During `elfeed-db-gc' and
+`elfeed-db-pack', metadata values will be scanned for `elfeed-ref'
+objects, such that references in metadata will be kept alive.  Note that
+only list data structures will be scanned (e.g., cons, list, alist,
+plist).  The data structures must not be cyclic since this is not
+supported by the database format."
   (or (plist-get (elfeed-meta--plist thing) key)
       default))
 
@@ -536,20 +541,42 @@ Return DEFAULT if unavailable."
                  (remhash id elfeed-db-feeds)))
              elfeed-db-feeds)))
 
+(defun elfeed-db--scan-1 (cb obj)
+  "Scan OBJ for `elfeed-ref' references and call CB for each reference."
+  ;; Written out as a loop to scan lists efficiently since Elisp lacks TCO.
+  ;; Note that cyclic objects are not supported by the database format.
+  (while (cond
+          ((elfeed-ref-p obj)
+           (funcall cb obj)
+           nil)
+          ((consp obj)
+           (elfeed-db--scan-1 cb (car obj))
+           (setf obj (cdr obj))))))
+
+(defun elfeed-db--scan (cb)
+  "Scan database for `elfeed-ref' references and call CB for each reference."
+  (let ((feeds (make-hash-table :test #'equal)))
+    (elfeed-db-visit (entry)
+      ;; Search for references in content, entry metadata and feed metadata
+      (elfeed-db--scan-1 cb (elfeed-entry-content entry))
+      (elfeed-db--scan-1 cb (elfeed-entry-meta entry))
+      ;; Only scan feed metadata once. Keep track of feeds in feeds.
+      (unless (gethash (elfeed-entry-feed-id entry) feeds)
+        (setf (gethash (elfeed-entry-feed-id entry) feeds) t)
+        (elfeed-db--scan-1 cb (elfeed-feed-meta (elfeed-entry-feed entry)))))))
+
 (defun elfeed-db-gc (&optional stats-p)
   "Clean up unused content from the content database.
 If STATS-P is true, return the space cleared in bytes."
   (elfeed-db-gc-empty-feeds)
   (let* ((data (expand-file-name "data" elfeed-db-directory))
          (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
-         (ids (cl-mapcan (lambda (d) (directory-files d nil nil t)) dirs))
-         (table (make-hash-table :test 'equal)))
+         (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
+         (table (make-hash-table :test #'equal)))
     (dolist (id ids)
       (setf (gethash id table) nil))
-    (elfeed-db-visit (entry)
-      (let ((content (elfeed-entry-content entry)))
-        (when (elfeed-ref-p content)
-          (setf (gethash (elfeed-ref-id content) table) t))))
+    (elfeed-db--scan
+     (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
     (cl-loop for id hash-keys of table using (hash-value used)
              for used-p = (or used (member id '("." "..")))
              when (and (not used-p) stats-p)
@@ -568,21 +595,21 @@ If STATS-P is true, return the space cleared in bytes."
          (content-temp (file-name-with-extension content-dest ".tmp.gz"))
          (index-dest (elfeed-ref-archive-filename ".index"))
          (index-temp (file-name-with-extension index-dest ".tmp.index"))
-         (next-archive (make-hash-table :test 'equal))
+         (next-archive (make-hash-table :test #'equal))
          (coding-system-for-write 'utf-8)
          (write-region-inhibit-fsync nil)
          (packed ()))
     (make-directory (expand-file-name "data" elfeed-db-directory) t)
     (with-temp-file content-temp
-      (elfeed-db-visit (entry)
-        (let ((ref (elfeed-entry-content entry))
-              (start (1- (point))))
-          (when (elfeed-ref-p ref)
-            (when-let* ((content (elfeed-deref ref)))
-              (push ref packed)
-              (insert content)
-              (setf (gethash (elfeed-ref-id ref) next-archive)
-                    (cons start (1- (point)))))))))
+      (elfeed-db--scan
+       (lambda (ref)
+         (when-let* (((not (gethash (elfeed-ref-id ref) next-archive)))
+                     (content (elfeed-deref ref)))
+           (push ref packed)
+           (let ((start (1- (point))))
+             (insert content)
+             (setf (gethash (elfeed-ref-id ref) next-archive)
+                   (cons start (1- (point)))))))))
     (with-temp-file index-temp
       (let ((standard-output (current-buffer))
             (print-level nil)

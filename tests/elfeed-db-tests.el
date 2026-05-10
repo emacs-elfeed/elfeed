@@ -246,6 +246,77 @@
                    (content (elfeed-deref (elfeed-entry-content entry))))
                (should (string= title content))))))))))
 
+(ert-deftest elfeed-ref-pack-metadata ()
+  (catch 'test-abort
+    (with-elfeed-test
+     (let* ((jka-compr-verbose nil)
+            (feed (elfeed-test-generate-feed))
+            (entry (elfeed-test-generate-entry feed))
+            ;; Keep these refs reachable only through metadata.
+            (content-ref (elfeed-ref "entry content"))
+            (entry-ref (elfeed-ref "entry metadata content"))
+            (feed-ref (elfeed-ref "feed metadata content"))
+            (check
+             (lambda ()
+               (let (found)
+                 (elfeed-db--scan
+                  (lambda (ref) (push (elfeed-ref-id ref) found)))
+                 (should (equal (delete-consecutive-dups (sort found #'string<))
+                                (sort (list (elfeed-ref-id content-ref)
+                                            (elfeed-ref-id entry-ref)
+                                            (elfeed-ref-id feed-ref)) #'string<)))
+                 (should (equal "entry content"
+                                (elfeed-deref (elfeed-entry-content entry))))
+                 (should (equal "entry metadata content"
+                                (elfeed-deref
+                                 (cdr (assq 'test-ref (elfeed-meta entry :saved))))))
+                 (should (equal "feed metadata content"
+                                (elfeed-deref
+                                 (cdr (assq 'test-ref (elfeed-meta feed :saved))))))))))
+       (unless (elfeed-gzip-supported-p)
+         (message "warning: gzip auto-compression unsupported, skipping")
+         (throw 'test-abort nil))
+       (elfeed-db-add (list entry))
+       (setf (elfeed-entry-content entry) content-ref)
+       ;; Use cons-based metadata so this exercises the supported scan model.
+       (setf (elfeed-meta entry :saved) `((test-ref . ,entry-ref))
+             (elfeed-meta feed  :saved) `((test-ref . ,feed-ref)))
+
+       (funcall check)
+       (elfeed-db-unload)
+
+       (elfeed-db-ensure)
+       (elfeed-db-pack)
+       (funcall check)
+       (elfeed-db-unload)
+
+       (elfeed-db-ensure)
+       (elfeed-db-gc)
+       (funcall check)))))
+
+(ert-deftest elfeed-db-scan ()
+  (with-elfeed-test
+   (let* ((x (elfeed-ref "x"))
+          (y (elfeed-ref "y"))
+          (test-list (list x 1 "foo" y :bar))
+          (test-alist `((a . 0) (b . ,x) (c . ,y) (d . 1)))
+          (test-dotted `(,x 1 "foo" . ,y))
+          (test-nested (list test-list test-alist test-dotted))
+          (refs ())
+          (cb (lambda (ref) (push (elfeed-ref-id ref) refs))))
+     (setq refs ())
+     (elfeed-db--scan-1 cb nil)
+     (elfeed-db--scan-1 cb "str")
+     (elfeed-db--scan-1 cb ["vec"])
+     (elfeed-db--scan-1 cb x)
+     (should (equal refs (list (elfeed-ref-id x))))
+     (dolist (test-obj (list test-list test-alist
+                             test-dotted test-nested))
+       (setq refs ())
+       (elfeed-db--scan-1 cb test-obj)
+       (should (equal (delete-consecutive-dups (sort refs #'string<))
+                      (sort (list (elfeed-ref-id x) (elfeed-ref-id y)) #'string<)))))))
+
 (ert-deftest elfeed-db-meta ()
   (with-elfeed-test
    (let* ((feed (elfeed-db-get-feed (elfeed-test-generate-url)))

@@ -208,6 +208,9 @@ Links are relative to BASE-URL if non-nil."
   "Update the buffer to match the selected entry, using a mail-style."
   (let* ((inhibit-read-only t)
          (title (elfeed-entry-title elfeed-show-entry))
+         (title (decode-coding-string title
+                                      (detect-coding-string title t)
+                                      t))
          (date (seconds-to-time (elfeed-entry-date elfeed-show-entry)))
          (authors (elfeed-meta elfeed-show-entry :authors))
          (link (elfeed-entry-link elfeed-show-entry))
@@ -276,12 +279,15 @@ The result depends on the value of `elfeed-show-unique-buffers'."
 
 (defun elfeed-show-entry (entry)
   "Display ENTRY in the current buffer."
-  (let ((buff (get-buffer-create (elfeed-show--buffer-name entry))))
-    (with-current-buffer buff
+  (let* ((buffer-title (elfeed-show--buffer-name entry))
+         (buffer (get-buffer-create (decode-coding-string buffer-title
+                                      (detect-coding-string buffer-title t)
+                                      t))))
+    (with-current-buffer buffer
       (elfeed-show-mode)
       (setq elfeed-show-entry entry)
       (elfeed-show-refresh))
-    (funcall elfeed-show-entry-switch buff)))
+    (funcall elfeed-show-entry-switch buffer)))
 
 (defun elfeed-show-next (&optional n)
   "Show the Nth next item in the `elfeed-search' buffer."
@@ -555,9 +561,12 @@ Prompts for ENCLOSURE-INDEX when called interactively."
 
 (defun elfeed-show-bookmark-make-record ()
   "Save the current position and the entry into a bookmark."
-  (let ((id (elfeed-entry-id elfeed-show-entry))
+  (let* ((id (elfeed-entry-id elfeed-show-entry))
         (position (point))
-        (title (elfeed-entry-title elfeed-show-entry)))
+        (title (elfeed-entry-title elfeed-show-entry))
+        (title (decode-coding-string title
+                                      (detect-coding-string title t)
+                                      t)))
     `(,(format "elfeed entry \"%s\"" title)
       (id . ,id)
       (location . ,title)

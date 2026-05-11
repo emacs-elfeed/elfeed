@@ -443,7 +443,12 @@ The customization `elfeed-search-date-format' sets the formatting."
   (let* ((tags (elfeed-entry-tags entry))
          (date-float (elfeed-entry-date entry))
          (date-str (elfeed-search-format-date date-float))
-         (title (or (elfeed-meta--title entry) ""))
+         (title (elfeed-meta--title entry))
+         (title (or (and title
+                         (decode-coding-string title
+                                               (detect-coding-string title t)
+                                               t))
+                    ""))
          (title-faces (elfeed-search--faces tags))
          (feed (elfeed-entry-feed entry))
          (feed-title (and feed (elfeed-meta--title feed)))

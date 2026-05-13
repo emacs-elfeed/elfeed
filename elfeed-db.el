@@ -48,9 +48,9 @@
 ;;; Code:
 
 (eval-when-compile (require 'subr-x))
-
 (require 'avl-tree)
 (require 'cl-lib)
+
 (require 'elfeed-lib)
 
 (defcustom elfeed-db-directory

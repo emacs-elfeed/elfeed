@@ -79,8 +79,7 @@
        (funcall test))
      (let ((elfeed-db-vtbl elfeed-db-vtbl-sqlite)
            (elfeed-db-sqlite nil))
-       (funcall test))
-     ))
+       (funcall test))))
 
 (defun elfeed-test-generate-feed ()
   "Generate a random feed. Warning: run this in `with-elfeed-test'."

@@ -333,11 +333,6 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
   "Run `elfeed-db-save' without triggering any errors, for use as a safe hook."
   (ignore-errors (elfeed-db-save)))
 
-(defun elfeed-db-upgrade (_db)
-  "Upgrade the database DB from a previous format."
-  (error "Upgrade is not supported"))
-(make-obsolete 'elfeed-db-upgrade "use instead `elfeed-db-classic-upgrade'." "3.4.2")
-
 (defun elfeed-db-load ()
   "Load the database index from the filesystem."
   (funcall (elfeed-db-vtbl-load elfeed-db-vtbl)))
@@ -764,6 +759,11 @@ gzip-compressed files, so the gzip program must be in your PATH."
           elfeed-db-classic-index (plist-get elfeed-db-classic :index)
           ;; Internal function use required for security!
           (avl-tree--cmpfun elfeed-db-classic-index) #'elfeed-db-compare)))
+
+(defun elfeed-db-classic-upgrade (_db)
+  "Upgrade the database DB from a previous format."
+  (error "Upgrade is not supported"))
+(define-obsolete-function-alias 'elfeed-db-upgrade 'elfeed-db-classic-upgrade "3.4.3")
 
 (defun elfeed-db-classic-loaded-p ()
   "Predicate for whether the database has been loaded.

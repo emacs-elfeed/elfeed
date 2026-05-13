@@ -132,6 +132,13 @@ If STATS-P is true, return the space cleared in bytes."))
                                   :gc #'elfeed-db-classic-gc)
   "Database vtable using the classic implementation.")
 
+(defconst elfeed-db-vtbl-sqlite (elfeed-db-vtbl-create
+                                 :loaded-p #'elfeed-db-sqlite-loaded-p
+                                 :save #'elfeed-db-sqlite-save
+                                 :load #'elfeed-db-sqlite-load
+                                 :unload-1 #'elfeed-db-sqlite-unload-1)
+  "Database vtable using the sqlite implementation.")
+
 (defvar elfeed-db-vtbl elfeed-db-vtbl-classic
   "The vtable for database operations.")
 
@@ -618,7 +625,7 @@ gzip-compressed files, so the gzip program must be in your PATH."
 
 (defun elfeed-db-classic-set-update-time-1 ()
   "Update the database last-update time."
-  (setf elfeed-db (plist-put elfeed-db :last-update (float-time))))
+  (setf elfeed-db-classic (plist-put elfeed-db-classic :last-update (float-time))))
 
 (defun elfeed-db-classic-add (entries)
   "Add ENTRIES to the database."
@@ -665,7 +672,7 @@ gzip-compressed files, so the gzip program must be in your PATH."
 
 (defun elfeed-db-classic-last-update ()
   "Return the last database update time in (`float-time') seconds."
-  (or (plist-get elfeed-db :last-update) 0))
+  (or (plist-get elfeed-db-classic :last-update) 0))
 
 (defun elfeed-db-classic-for-each (function)
   "Call FUNCTION with every entry id from newest to oldest."
@@ -676,7 +683,7 @@ gzip-compressed files, so the gzip program must be in your PATH."
 (defun elfeed-db-classic-save ()
   "Write the database index to the filesystem."
   (elfeed-db-ensure)
-  (setf elfeed-db (plist-put elfeed-db :version elfeed-db-classic-version))
+  (setf elfeed-db-classic (plist-put elfeed-db-classic :version elfeed-db-classic-version))
   (mkdir elfeed-db-directory t)
   (let* ((coding-system-for-write 'utf-8)
          (dest (expand-file-name "index" elfeed-db-directory))
@@ -701,7 +708,7 @@ gzip-compressed files, so the gzip program must be in your PATH."
   (let ((index (expand-file-name "index" elfeed-db-directory))
         (enable-local-variables nil)) ; don't set local variables from index!
     (if (not (file-exists-p index))
-        (setf elfeed-db (elfeed-db-classic--empty))
+        (setf elfeed-db-classic (elfeed-db-classic--empty))
       ;; Override the default value for major-mode. There is no
       ;; preventing find-file-noselect from starting the default major
       ;; mode while also having it handle buffer conversion. Some
@@ -715,29 +722,29 @@ gzip-compressed files, so the gzip program must be in your PATH."
               ;; May need to skip over dummy database
               (let ((db-1 (read (current-buffer)))
                     (db-2 (ignore-errors (read (current-buffer)))))
-                (setf elfeed-db (or db-2 db-1)))
+                (setf elfeed-db-classic (or db-2 db-1)))
             ;; Just load first database
-            (setf elfeed-db (read (current-buffer))))
+            (setf elfeed-db-classic (read (current-buffer))))
           (kill-buffer))))
     ;; Perform an upgrade if necessary and possible
-    (unless (equal (plist-get elfeed-db :version) elfeed-db-classic-version)
-      (setq elfeed-db nil)
+    (unless (equal (plist-get elfeed-db-classic :version) elfeed-db-classic-version)
+      (setq elfeed-db-classic nil)
       (error "Elfeed database format is outdated.  Please upgrade first using an older version of Elfeed"))
-    (setf elfeed-db-classic-feeds (plist-get elfeed-db :feeds)
-          elfeed-db-classic-entries (plist-get elfeed-db :entries)
-          elfeed-db-classic-index (plist-get elfeed-db :index)
+    (setf elfeed-db-classic-feeds (plist-get elfeed-db-classic :feeds)
+          elfeed-db-classic-entries (plist-get elfeed-db-classic :entries)
+          elfeed-db-classic-index (plist-get elfeed-db-classic :index)
           ;; Internal function use required for security!
           (avl-tree--cmpfun elfeed-db-classic-index) #'elfeed-db-compare)))
 
 (defun elfeed-db-classic-loaded-p ()
   "Predicate for whether the database has been loaded.
 This function does not call `elfeed-db-ensure'."
-  elfeed-db)
+  elfeed-db-classic)
 
 (defun elfeed-db-classic-unload-1 ()
   "Unload the database so that it can be operated on externally."
   (interactive)
-  (setf elfeed-db nil
+  (setf elfeed-db-classic nil
         elfeed-db-classic-feeds nil
         elfeed-db-classic-entries nil
         elfeed-db-classic-index nil))
@@ -782,6 +789,82 @@ If STATS-P is true, return the space cleared in bytes."
              finally (cl-loop for dir in dirs
                               when (directory-empty-p dir)
                               do (delete-directory dir)))))
+
+;; Sqlite implementation
+
+(defvar elfeed-db-sqlite nil
+  "The sqlite connection.")
+
+(defvar elfeed-db-sqlite-version 1
+  "The version of the sqlite database schema.")
+
+(defun elfeed-db-sqlite-loaded-p ()
+  "Return non-nil when the database is loaded."
+  elfeed-db-sqlite)
+
+(defun elfeed-db-sqlite-load ()
+  "Load the sqlite database."
+  (unless (sqlite-available-p)
+    (error "Emacs was not built with sqlite support"))
+
+  (let* ((path (expand-file-name "index.sqlite" elfeed-db-directory))
+         (old (file-exists-p path))
+         (sqlite (sqlite-open path)))
+    (if old
+        (let ((version (caar (sqlite-select sqlite "SELECT version FROM metadata"))))
+          (unless (eql version elfeed-db-sqlite-version)
+            (error "Elfeed database format is outdated.  Please upgrade first using an older version of Elfeed")))
+      (sqlite-execute-batch sqlite
+                            "CREATE TABLE IF NOT EXISTS feed(
+id TEXT NOT NULL PRIMARY KEY,
+url TEXT NOT NULL DEFAULT 'nil',
+title TEXT NOT NULL DEFAULT 'nil',
+author TEXT NOT NULL DEFAULT 'nil',
+meta TEXT NOT NULL DEFAULT 'nil'
+);
+
+CREATE TABLE IF NOT EXISTS entry(
+id TEXT UNIQUE,
+title TEXT NOT NULL DEFAULT 'nil',
+link TEXT NOT NULL DEFAULT 'nil',
+date DOUBLE NOT NULL DEFAULT 0.0,
+content TEXT NOT NULL DEFAULT 'nil',
+content_type TEXT NOT NULL DEFAULT 'nil',
+feed_id TEXT NOT NULL UNIQUE,
+meta TEXT NOT NULL DEFAULT 'nil',
+
+FOREIGN KEY(feed_id) REFERENCES feed(id)
+);
+
+CREATE TABLE IF NOT EXISTS entry_enclosure(
+entry_id TEXT NOT NULL,
+enclosure TEXT NOT NULL,
+
+FOREIGN KEY(entry_id) REFERENCES entry(id)
+);
+
+CREATE TABLE IF NOT EXISTS entry_tag(
+entry_id INTEGER NOT NULL,
+tag TEXT NOT NULL,
+
+FOREIGN KEY(entry_id) REFERENCES entry(id),
+);
+
+CREATE TABLE IF NOT EXISTS metadata(
+version INTEGER NOT NULL,
+last_update DOUBLE,
+
+enforcer INT DEFAULT 0 NOT NULL CHECK(enforcer == 0),
+UNIQUE(enforcer)
+)"))
+    (setq elfeed-db-sqlite sqlite)))
+
+(defun elfeed-db-sqlite-save ()
+  (sqlite-commit elfeed-db-sqlite))
+
+(defun elfeed-db-sqlite-unload-1 ()
+  (sqlite-close elfeed-db-sqlite)
+  (setq elfeed-db-sqlite nil))
 
 (unless noninteractive
   (add-hook 'kill-emacs-hook #'elfeed-db-gc-safe :append)

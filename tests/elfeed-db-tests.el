@@ -70,12 +70,16 @@
                     (unwind-protect
                         (progn
                           ,@body)
-                      (delete-directory temp-dir :recursive))))))
+                      (delete-directory temp-dir :recursive)
+                      (elfeed-db-unload))))))
      (let ((elfeed-db-vtbl elfeed-db-vtbl-classic)
            (elfeed-db-classic nil)
            (elfeed-db-classic-feeds nil)
            (elfeed-db-classic-entries nil)
            (elfeed-db-classic-index nil))
+       (funcall test))
+     (let ((elfeed-db-vtbl elfeed-db-vtbl-sqlite)
+           (elfeed-db-sqlite nil))
        (funcall test))))
 
 (defun elfeed-test-generate-feed ()

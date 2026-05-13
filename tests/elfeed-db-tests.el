@@ -70,8 +70,7 @@
                     (unwind-protect
                         (progn
                           ,@body)
-                      (delete-directory temp-dir :recursive)
-                      (elfeed-db-unload))))))
+                      (delete-directory temp-dir :recursive))))))
      (let ((elfeed-db-vtbl elfeed-db-vtbl-classic)
            (elfeed-db-classic nil)
            (elfeed-db-classic-feeds nil)
@@ -80,7 +79,8 @@
        (funcall test))
      (let ((elfeed-db-vtbl elfeed-db-vtbl-sqlite)
            (elfeed-db-sqlite nil))
-       (funcall test))))
+       (funcall test))
+     ))
 
 (defun elfeed-test-generate-feed ()
   "Generate a random feed. Warning: run this in `with-elfeed-test'."
@@ -128,11 +128,15 @@
      (elfeed-db-add del)
      (should (= (elfeed-db-size) 20))
      (dolist (entry (append keep del))
-       (should (eq entry (elfeed-db-get-entry (elfeed-entry-id entry)))))
+       (when (eq elfeed-db-vtbl elfeed-db-vtbl-classic)
+         (should (eq entry (elfeed-db-get-entry (elfeed-entry-id entry)))))
+       (should (equal entry (elfeed-db-get-entry (elfeed-entry-id entry)))))
      (elfeed-db-delete del)
      (should (= (elfeed-db-size) 10))
      (dolist (entry keep)
-       (should (eq entry (elfeed-db-get-entry (elfeed-entry-id entry)))))
+       (when (eq elfeed-db-vtbl elfeed-db-vtbl-classic)
+         (should (eq entry (elfeed-db-get-entry (elfeed-entry-id entry)))))
+       (should (equal entry (elfeed-db-get-entry (elfeed-entry-id entry)))))
      (dolist (entry del)
        (should (null (elfeed-db-get-entry (elfeed-entry-id entry))))))))
 

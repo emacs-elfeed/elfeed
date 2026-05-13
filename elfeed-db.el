@@ -133,10 +133,19 @@ If STATS-P is true, return the space cleared in bytes."))
   "Database vtable using the classic implementation.")
 
 (defconst elfeed-db-vtbl-sqlite (elfeed-db-vtbl-create
-                                 :loaded-p #'elfeed-db-sqlite-loaded-p
+                                 :get-feed #'elfeed-db-sqlite-get-feed
+                                 :get-entry #'elfeed-db-sqlite-get-entry
+                                 :set-update-time-1 #'elfeed-db-sqlite-set-update-time-1
+                                 :add #'elfeed-db-sqlite-add
+                                 :delete #'elfeed-db-sqlite-delete
+                                 :tag #'elfeed-db-sqlite-tag
+                                 :untag #'elfeed-db-sqlite-untag
+                                 :for-each #'elfeed-db-sqlite-for-each
                                  :save #'elfeed-db-sqlite-save
+                                 :unload-1 #'elfeed-db-sqlite-unload-1
                                  :load #'elfeed-db-sqlite-load
-                                 :unload-1 #'elfeed-db-sqlite-unload-1)
+                                 :loaded-p #'elfeed-db-sqlite-loaded-p
+                                 :size #'elfeed-db-sqlite-size)
   "Database vtable using the sqlite implementation.")
 
 (defvar elfeed-db-vtbl elfeed-db-vtbl-classic
@@ -798,9 +807,133 @@ If STATS-P is true, return the space cleared in bytes."
 (defvar elfeed-db-sqlite-version 1
   "The version of the sqlite database schema.")
 
-(defun elfeed-db-sqlite-loaded-p ()
-  "Return non-nil when the database is loaded."
-  elfeed-db-sqlite)
+(defun elfeed-db-sqlite-get-feed (id)
+  (if-let* ((feed-slots (sqlite-select elfeed-db-sqlite "SELECT url, title, author, meta FROM feed
+WHERE id == $1"
+                                       (list (prin1-to-string id))))
+            (feed-parsed (mapcar #'read feed-slots)))
+      (cl-destructuring-bind (url title author meta) feed-parsed
+        (elfeed-feed--create :id id
+                             :url url
+                             :title title
+                             :author author
+                             :meta meta))
+    (sqlite-execute elfeed-db-sqlite "INSERT INTO feed(id) VALUES($1)"
+                    (list (prin1-to-string id)))
+    (elfeed-feed--create :id id)))
+
+(defun elfeed-db-sqlite--get-tags (id)
+  (mapcar (lambda (tag) (intern (car tag)))
+          (sqlite-select elfeed-db-sqlite "SELECT tag FROM entry_tag
+WHERE entry_id == $1"
+                         (list (prin1-to-string id)))))
+
+(defun elfeed-db-sqlite--get-enclosures (id)
+  (mapcar #'car
+          (sqlite-select elfeed-db-sqlite "SELECT enclosure FROM entry_enclosure
+WHERE entry_id == $1"
+                         (list (prin1-to-string id)))))
+
+(defun elfeed-db-sqlite-get-entry (id)
+  (when-let* ((slots (car (sqlite-select elfeed-db-sqlite "SELECT title, link, date, content, content_type, feed_id, meta FROM entry
+WHERE id == $1"
+                                         (list (prin1-to-string id))))))
+    (cl-destructuring-bind (title link date content content-type feed-id meta) slots
+      (elfeed-entry--create :id id
+                            :title (read title)
+                            :link (read link)
+                            :date date
+                            :content (read content)
+                            :content-type (read content-type)
+                            :tags (elfeed-db-sqlite--get-tags id)
+                            :enclosures (elfeed-db-sqlite--get-enclosures id)
+                            :feed-id (read feed-id)
+                            :meta (read meta)))))
+
+(defun elfeed-db-sqlite-set-update-time-1 ()
+  (sqlite-execute elfeed-db-sqlite "UPDATE metadata SET last_update = $1" (list (float-time))))
+
+(defun elfeed-db-sqlite-add (entries)
+;;   (cl-loop for entry in entries
+;;            for id = (elfeed-entry-id entry)
+;;            for original = (elfeed-db-sqlite-get-entry id)
+;;            ;; for new-date = (elfeed-entry-date entry)
+;;            ;; for original-date = (and original (elfeed-entry-date original))
+;;            ;; when original count
+;;            ;; ()
+
+;;            for values = (list (prin1-to-string id)
+;;                               (prin1-to-string (elfeed-entry-title entry))
+;;                               (prin1-to-string (elfeed-entry-link entry))
+;;                               (elfeed-entry-date entry)
+;;                               (prin1-to-string (elfeed-entry-content entry))
+;;                               (prin1-to-string (elfeed-entry-content-type entry))
+;;                               (prin1-to-string (elfeed-entry-feed-id entry))
+;;                               (prin1-to-string (elfeed-entry-meta entry)))
+;;            count (progn
+;;                    (sqlite-select elfeed-db-sqlite
+;;                                   "INSERT INTO entry(id, title, link, date, content, content_type, feed_id, meta)
+;; VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+;; ON CONFLICT(id) DO NOTHING"
+;;                                   values)
+;;                    (elfeed-entry-merge original entry))
+;;            into change-count
+;;            finally do
+;;            (unless (zerop change-count)
+;;              (elfeed-db-set-update-time)))
+
+  (cl-loop for entry in entries
+           for id = (elfeed-entry-id entry)
+           for values = (list (prin1-to-string id)
+                              (prin1-to-string (elfeed-entry-title entry))
+                              (prin1-to-string (elfeed-entry-link entry))
+                              (elfeed-entry-date entry)
+                              (prin1-to-string (elfeed-entry-content entry))
+                              (prin1-to-string (elfeed-entry-content-type entry))
+                              (prin1-to-string (elfeed-entry-feed-id entry))
+                              (prin1-to-string (elfeed-entry-meta entry)))
+           do (progn
+                (sqlite-select elfeed-db-sqlite
+                               "INSERT INTO entry(id, title, link, date, content, content_type, feed_id, meta)
+VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT(id) DO NOTHING"
+                               values)
+                (elfeed-db-sqlite-tag (list entry) (elfeed-entry-tags entry)))))
+
+(defun elfeed-db-sqlite-delete (entries)
+  (cl-loop for entry in entries
+           do (sqlite-select elfeed-db-sqlite
+                             "DELETE FROM entry
+WHERE id == $1"
+                             (list (prin1-to-string (elfeed-entry-id entry))))))
+
+(defun elfeed-db-sqlite-tag (entries tags)
+  (dolist (entry entries)
+    (dolist (tag tags)
+      (sqlite-select elfeed-db-sqlite "INSERT OR REPLACE INTO entry_tag(entry_id, tag) VALUES($1, $2)"
+                     (list (prin1-to-string (elfeed-entry-id entry)) (symbol-name tag))))))
+(defun elfeed-db-sqlite-untag (entries tags)
+  (dolist (entry entries)
+    (dolist (tag tags)
+      (sqlite-select elfeed-db-sqlite "DELETE FROM entry_tag
+WHERE entry_id == $1 && tag == $2"
+                     (list (elfeed-entry-id entry) (symbol-name tag))))))
+
+(defun elfeed-db-sqlite-for-each (function)
+  (let ((set (sqlite-select elfeed-db-sqlite
+                            "SELECT id FROM entry
+ORDER BY date DESC"
+                            nil
+                            'set)))
+    (while-let ((row (sqlite-next set)))
+      (funcall function (car row)))))
+
+(defun elfeed-db-sqlite-save ()
+  (sqlite-commit elfeed-db-sqlite))
+
+(defun elfeed-db-sqlite-unload-1 ()
+  (sqlite-close elfeed-db-sqlite)
+  (setq elfeed-db-sqlite nil))
 
 (defun elfeed-db-sqlite-load ()
   "Load the sqlite database."
@@ -824,13 +957,13 @@ meta TEXT NOT NULL DEFAULT 'nil'
 );
 
 CREATE TABLE IF NOT EXISTS entry(
-id TEXT UNIQUE,
+id TEXT PRIMARY KEY,
 title TEXT NOT NULL DEFAULT 'nil',
 link TEXT NOT NULL DEFAULT 'nil',
 date DOUBLE NOT NULL DEFAULT 0.0,
 content TEXT NOT NULL DEFAULT 'nil',
 content_type TEXT NOT NULL DEFAULT 'nil',
-feed_id TEXT NOT NULL UNIQUE,
+feed_id TEXT NOT NULL,
 meta TEXT NOT NULL DEFAULT 'nil',
 
 FOREIGN KEY(feed_id) REFERENCES feed(id)
@@ -847,7 +980,7 @@ CREATE TABLE IF NOT EXISTS entry_tag(
 entry_id INTEGER NOT NULL,
 tag TEXT NOT NULL,
 
-FOREIGN KEY(entry_id) REFERENCES entry(id),
+FOREIGN KEY(entry_id) REFERENCES entry(id)
 );
 
 CREATE TABLE IF NOT EXISTS metadata(
@@ -856,15 +989,16 @@ last_update DOUBLE,
 
 enforcer INT DEFAULT 0 NOT NULL CHECK(enforcer == 0),
 UNIQUE(enforcer)
-)"))
+)")
+      (sqlite-execute sqlite "INSERT INTO metadata(version) values($1)" (list elfeed-db-sqlite-version)))
     (setq elfeed-db-sqlite sqlite)))
 
-(defun elfeed-db-sqlite-save ()
-  (sqlite-commit elfeed-db-sqlite))
+(defun elfeed-db-sqlite-loaded-p ()
+  "Return non-nil when the database is loaded."
+  elfeed-db-sqlite)
 
-(defun elfeed-db-sqlite-unload-1 ()
-  (sqlite-close elfeed-db-sqlite)
-  (setq elfeed-db-sqlite nil))
+(defun elfeed-db-sqlite-size ()
+  (caar (sqlite-select elfeed-db-sqlite "SELECT COUNT(1) FROM entry")))
 
 (unless noninteractive
   (add-hook 'kill-emacs-hook #'elfeed-db-gc-safe :append)

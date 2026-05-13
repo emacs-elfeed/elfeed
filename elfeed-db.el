@@ -140,6 +140,7 @@ This function does not call `elfeed-db-ensure.'")
                                  :last-update #'elfeed-db-sqlite-last-update
                                  :for-each #'elfeed-db-sqlite-for-each
                                  :feed-entries #'elfeed-db-sqlite-feed-entries
+                                 :get-all-tags #'elfeed-db-sqlite-get-all-tags
                                  :save #'elfeed-db-sqlite-save
                                  :load #'elfeed-db-sqlite-load
                                  :loaded-p #'elfeed-db-sqlite-loaded-p
@@ -310,6 +311,7 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defun elfeed-db-get-all-tags ()
   "Return a list of all tags currently in the database."
+  (elfeed-db-ensure)
   (if-let* ((get-all-tags (elfeed-db-vtbl-get-all-tags elfeed-db-vtbl)))
       (funcall get-all-tags)
     (let ((table (make-hash-table :test 'eq)))
@@ -921,6 +923,11 @@ ORDER BY date DESC"
                            "SELECT FROM id, title, link, date, content, content_type, meta
 WHERE feed_id == $1"
                            (list feed-id)))))
+
+(defun elfeed-db-sqlite-get-all-tags ()
+  (mapcar (lambda (tag) (intern (car tag)))
+          (sqlite-select elfeed-db-sqlite "SELECT DISTINCT tag FROM entry_tag
+ORDER BY tag ASC")))
 
 (defun elfeed-db-sqlite-save ()
   (sqlite-commit elfeed-db-sqlite))

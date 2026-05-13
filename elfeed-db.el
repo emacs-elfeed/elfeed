@@ -139,6 +139,7 @@ This function does not call `elfeed-db-ensure.'")
                                  :untag #'elfeed-db-sqlite-untag
                                  :last-update #'elfeed-db-sqlite-last-update
                                  :for-each #'elfeed-db-sqlite-for-each
+                                 :feed-entries #'elfeed-db-sqlite-feed-entries
                                  :save #'elfeed-db-sqlite-save
                                  :load #'elfeed-db-sqlite-load
                                  :loaded-p #'elfeed-db-sqlite-loaded-p
@@ -847,7 +848,7 @@ WHERE id == $1"
 (defun elfeed-db-sqlite-set-update-time-1 ()
   (sqlite-execute elfeed-db-sqlite "UPDATE metadata SET last_update = $1" (list (float-time))))
 
-(defun elfeed-db-sqlite-add (entries)
+(defun elfeed-db-sqlite-add (_entries)
 ;;   (cl-loop for entry in entries
 ;;            for id = (elfeed-entry-id entry)
 ;;            for values = (list (prin1-to-string id)
@@ -898,6 +899,28 @@ ORDER BY date DESC"
                             'set)))
     (while-let ((row (sqlite-next set)))
       (funcall function (car row)))))
+
+(defun elfeed-db-sqlite-feed-entries (feed-or-id)
+  (let ((feed-id (if (elfeed-feed-p feed-or-id)
+                     (elfeed-feed-id feed-or-id)
+                   feed-or-id)))
+    (mapcar (lambda (row)
+              (cl-destructuring-bind (id title link date content content-type meta) row
+                  (let ((id (read id)))
+                    (elfeed-feed--create :id id
+                                         :title (read title)
+                                         :link (read link)
+                                         :date date
+                                         :content (read content)
+                                         :content-type (read content-type)
+                                         :tags (elfeed-db-sqlite--get-tags id)
+                                         :enclosures (elfeed-db-sqlite--get-enclosures id)
+                                         :meta (read meta)
+                                         :feed-id feed-id))))
+            (sqlite-select elfeed-db-sqlite
+                           "SELECT FROM id, title, link, date, content, content_type, meta
+WHERE feed_id == $1"
+                           (list feed-id)))))
 
 (defun elfeed-db-sqlite-save ()
   (sqlite-commit elfeed-db-sqlite))

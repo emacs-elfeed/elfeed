@@ -808,9 +808,9 @@ If STATS-P is true, return the space cleared in bytes."
   "The version of the sqlite database schema.")
 
 (defun elfeed-db-sqlite-get-feed (id)
-  (if-let* ((feed-slots (sqlite-select elfeed-db-sqlite "SELECT url, title, author, meta FROM feed
+  (if-let* ((feed-slots (car (sqlite-select elfeed-db-sqlite "SELECT url, title, author, meta FROM feed
 WHERE id == $1"
-                                       (list (prin1-to-string id))))
+                                            (list (prin1-to-string id)))))
             (feed-parsed (mapcar #'read feed-slots)))
       (cl-destructuring-bind (url title author meta) feed-parsed
         (elfeed-feed--create :id id

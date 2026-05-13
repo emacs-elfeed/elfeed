@@ -109,9 +109,7 @@ This function does not call `elfeed-db-ensure'.")
   (unload-1 nil :documentation "Unload the database so that it can be operated on externally.
 This function does not call `elfeed-db-ensure.'")
   (size nil :documentation "Return a count of the number of entries in the database.")
-  (gc-empty-feeds nil :documentation "Remove feeds with no entries from the database.")
-  (gc nil :documentation "Clean up unused content from the content database.
-If STATS-P is true, return the space cleared in bytes."))
+  (gc-empty-feeds nil :documentation "Remove feeds with no entries from the database."))
 
 (defconst elfeed-db-vtbl-classic (elfeed-db-vtbl-create
                                   :get-feed #'elfeed-db-classic-get-feed
@@ -542,27 +540,25 @@ supported by the database format."
   "Clean up unused content from the content database.
 If STATS-P is true, return the space cleared in bytes."
   (elfeed-db-gc-empty-feeds)
-  (if-let* ((gc (elfeed-db-vtbl-gc elfeed-db-vtbl)))
-      (funcall gc stats-p)
-    (let* ((data (expand-file-name "data" elfeed-db-directory))
-           (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
-           (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
-           (table (make-hash-table :test #'equal)))
-      (dolist (id ids)
-        (setf (gethash id table) nil))
-      (elfeed-db--scan
-       (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
-      (cl-loop for id hash-keys of table using (hash-value used)
-               for used-p = (or used (member id '("." "..")))
-               when (and (not used-p) stats-p)
-               sum (let* ((ref (elfeed-ref--create :id id))
-                          (file (elfeed-ref--file ref)))
-                     (* 1.0 (nth 7 (file-attributes file))))
-               unless used-p
-               do (elfeed-ref-delete (elfeed-ref--create :id id))
-               finally (cl-loop for dir in dirs
-                                when (directory-empty-p dir)
-                                do (delete-directory dir))))))
+  (let* ((data (expand-file-name "data" elfeed-db-directory))
+         (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
+         (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
+         (table (make-hash-table :test #'equal)))
+    (dolist (id ids)
+      (setf (gethash id table) nil))
+    (elfeed-db--scan
+     (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
+    (cl-loop for id hash-keys of table using (hash-value used)
+             for used-p = (or used (member id '("." "..")))
+             when (and (not used-p) stats-p)
+             sum (let* ((ref (elfeed-ref--create :id id))
+                        (file (elfeed-ref--file ref)))
+                   (* 1.0 (nth 7 (file-attributes file))))
+             unless used-p
+             do (elfeed-ref-delete (elfeed-ref--create :id id))
+             finally (cl-loop for dir in dirs
+                              when (directory-empty-p dir)
+                              do (delete-directory dir)))))
 
 (defun elfeed-db-pack ()
   "Pack all content into a single archive for efficient storage."

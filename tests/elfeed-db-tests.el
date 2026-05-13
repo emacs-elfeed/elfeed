@@ -60,19 +60,23 @@
 (defmacro with-elfeed-test (&rest body)
   "Run BODY with a fresh, empty database that will be destroyed on exit."
   (declare (indent defun) (debug t))
-  `(let* ((elfeed-db nil)
-          (elfeed-db-feeds nil)
-          (elfeed-db-entries nil)
-          (elfeed-db-index nil)
-          (elfeed-feeds nil)
-          (temp-dir (make-temp-file "elfeed-test-" t))
-          (elfeed-db-directory temp-dir)
+  `(let* ((elfeed-feeds nil)
           (elfeed-new-entry-hook nil)
           (elfeed-db-update-hook nil)
-          (elfeed-initial-tags '(unread)))
-     (unwind-protect
-         (progn ,@body)
-       (delete-directory temp-dir :recursive))))
+          (elfeed-initial-tags '(unread))
+          (test (lambda ()
+                  (let* ((temp-dir (make-temp-file "elfeed-test-" t))
+                         (elfeed-db-directory temp-dir))
+                    (unwind-protect
+                        (progn
+                          ,@body)
+                      (delete-directory temp-dir :recursive))))))
+     (let ((elfeed-db-vtbl elfeed-db-vtbl-classic)
+           (elfeed-db-classic nil)
+           (elfeed-db-classic-feeds nil)
+           (elfeed-db-classic-entries nil)
+           (elfeed-db-classic-index nil))
+       (funcall test))))
 
 (defun elfeed-test-generate-feed ()
   "Generate a random feed. Warning: run this in `with-elfeed-test'."

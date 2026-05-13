@@ -48,9 +48,9 @@
 ;;; Code:
 
 (eval-when-compile (require 'subr-x))
+
 (require 'avl-tree)
 (require 'cl-lib)
-
 (require 'elfeed-lib)
 
 (defcustom elfeed-db-directory
@@ -62,21 +62,6 @@ Elfeed uses a subdirectory of your Emacs configuration by default, e.g.,
 old ~/.elfeed directory is present, it will be used instead."
   :group 'elfeed
   :type 'directory)
-
-(defvar elfeed-db nil
-  "The core database for elfeed.")
-
-(defvar elfeed-db-feeds nil
-  "Feeds hash table, part of `elfeed-db'.")
-
-(defvar elfeed-db-entries nil
-  "Entries hash table, part of `elfeed-db'.")
-
-(defvar elfeed-db-index nil
-  "Collection of all entries sorted by date, part of `elfeed-db'.")
-
-(defvar elfeed-db-version 4
-  "The database version this version of Elfeed expects to use.")
 
 (defvar elfeed-new-entry-hook ()
   "Functions in this list are called with the new entry as its argument.
@@ -100,6 +85,56 @@ This is a chance to add custom tags to new entries.")
   "A single entry from a feed, normalized towards Atom."
   id title link date content content-type enclosures tags feed-id meta)
 
+(cl-defstruct (elfeed-db-vtbl (:constructor elfeed-db-vtbl-create))
+  "A vtable for database methods.
+All of these methods when through the elfeed-db-* functions will call
+`elfeed-db-ensure' unless specified otherwise."
+  (get-feed nil :documentation "Get/create the feed for ID.")
+  (get-entry nil :documentation "Get the entry for ID.")
+  (set-update-time-1 nil :documentation "Update the database last-update time.")
+  (add nil :documentation "Add ENTRIES to the database.")
+  (delete nil :documentation "Remove ENTRIES from database.")
+  (tag nil :documentation "Modify the database to add TAGS to entries in ENTRY-OR-ENTRY-LIST.")
+  (untag nil :documentation "Modify the database to remove TAGS to entries in ENTRY-OR-ENTRY-LIST.")
+  (last-update nil :documentation "Return the last database update time in (`float-time') seconds.")
+  (for-each nil :documentation "Run FUNCTION over every entry id from newest to oldest.")
+  (feed-entries nil :documentation "Return a list of all entries for a particular feed.
+The FEED-OR-ID may be a feed struct or a feed ID (url).")
+  (get-all-tags nil :documentation "Return a list of all tags currently in the database.")
+  (save nil :documentation "Write the database index to the filesystem.")
+  (load nil :documentation "Load the database index from the filesystem.
+This function does not call `elfeed-db-ensure'.")
+  (loaded-p nil :documentation "Predicate for whether the database has been loaded.
+This function does not call `elfeed-db-ensure'.")
+  (unload-1 nil :documentation "Unload the database so that it can be operated on externally.
+This function does not call `elfeed-db-ensure.'")
+  (size nil :documentation "Return a count of the number of entries in the database.")
+  (gc-empty-feeds nil :documentation "Remove feeds with no entries from the database.")
+  (gc nil :documentation "Clean up unused content from the content database.
+If STATS-P is true, return the space cleared in bytes."))
+
+(defconst elfeed-db-vtbl-classic (elfeed-db-vtbl-create
+                                  :get-feed #'elfeed-db-classic-get-feed
+                                  :get-entry #'elfeed-db-classic-get-entry
+                                  :set-update-time-1 #'elfeed-db-classic-set-update-time-1
+                                  :add #'elfeed-db-classic-add
+                                  :delete #'elfeed-db-classic-delete
+                                  :tag #'elfeed-db-classic-tag
+                                  :untag #'elfeed-db-classic-untag
+                                  :last-update #'elfeed-db-classic-last-update
+                                  :for-each #'elfeed-db-classic-for-each
+                                  :save #'elfeed-db-classic-save
+                                  :load #'elfeed-db-classic-load
+                                  :loaded-p #'elfeed-db-classic-loaded-p
+                                  :unload-1 #'elfeed-db-classic-unload-1
+                                  :size #'elfeed-db-classic-size
+                                  :gc-empty-feeds #'elfeed-db-classic-gc-empty-feeds
+                                  :gc #'elfeed-db-classic-gc)
+  "Database vtable using the classic implementation.")
+
+(defvar elfeed-db-vtbl elfeed-db-vtbl-classic
+  "The vtable for database operations.")
+
 (defun elfeed-entry-merge (a b)
   "Merge B into A, preserving A's tags.
 Return non-nil if an actual update occurred, not counting content."
@@ -119,13 +154,12 @@ Return non-nil if an actual update occurred, not counting content."
 (defun elfeed-db-get-feed (id)
   "Get/create the feed for ID."
   (elfeed-db-ensure)
-  (with-memoization (gethash id elfeed-db-feeds)
-    (elfeed-feed--create :id id)))
+  (funcall (elfeed-db-vtbl-get-feed elfeed-db-vtbl) id))
 
 (defun elfeed-db-get-entry (id)
   "Get the entry for ID."
   (elfeed-db-ensure)
-  (gethash id elfeed-db-entries))
+  (funcall (elfeed-db-vtbl-get-entry elfeed-db-vtbl) id))
 
 (defun elfeed-db-compare (a b)
   "Return non-nil if entry A is newer than entry B."
@@ -139,47 +173,19 @@ Return non-nil if an actual update occurred, not counting content."
 
 (defun elfeed-db-set-update-time ()
   "Update the database last-update time."
-  (setf elfeed-db (plist-put elfeed-db :last-update (float-time)))
+  (elfeed-db-ensure)
+  (funcall (elfeed-db-vtbl-set-update-time-1 elfeed-db-vtbl))
   (run-hooks 'elfeed-db-update-hook))
 
 (defun elfeed-db-add (entries)
   "Add ENTRIES to the database."
   (elfeed-db-ensure)
-  (cl-loop for entry in entries
-           for id = (elfeed-entry-id entry)
-           for original = (gethash id elfeed-db-entries)
-           for new-date = (elfeed-entry-date entry)
-           for original-date = (and original (elfeed-entry-date original))
-           do (elfeed-deref-entry entry)
-           when original count
-           (if (= new-date original-date)
-               (elfeed-entry-merge original entry)
-             (avl-tree-delete elfeed-db-index id)
-             (prog1 (elfeed-entry-merge original entry)
-               (avl-tree-enter elfeed-db-index id)))
-           into change-count
-           else count
-           (setf (gethash id elfeed-db-entries) entry)
-           into change-count
-           and do
-           (progn
-             (avl-tree-enter elfeed-db-index id)
-             (run-hook-with-args 'elfeed-new-entry-hook entry))
-           finally
-           (unless (zerop change-count)
-             (elfeed-db-set-update-time)))
-  :success)
+  (funcall (elfeed-db-vtbl-add elfeed-db-vtbl) entries))
 
 (defun elfeed-db-delete (entries)
   "Delete ENTRIES from database."
   (elfeed-db-ensure)
-  (when entries
-    (dolist (entry entries)
-      (let ((id (elfeed-entry-id entry)))
-        (avl-tree-delete elfeed-db-index id)
-        (remhash id elfeed-db-entries)))
-    (elfeed-db-set-update-time))
-  :success)
+  (funcall (elfeed-db-vtbl-delete elfeed-db-vtbl) entries))
 
 (defun elfeed-entry-feed (entry)
   "Get the feed struct for ENTRY."
@@ -205,13 +211,17 @@ Additional tag lists can be given as MORE-TAGS."
 
 (defun elfeed-tag (entry-or-entry-list &rest tags)
   "Add TAGS to ENTRY-OR-ENTRY-LIST and run `elfeed-tag-hooks'."
+  (elfeed-db-ensure)
   (let ((entries (ensure-list entry-or-entry-list)))
+    (funcall (elfeed-db-vtbl-tag elfeed-db-vtbl) entry-or-entry-list tags)
     (run-hook-with-args 'elfeed-tag-hooks entries tags)
     (cl-loop for entry in entries do (apply #'elfeed-tag-1 entry tags))))
 
 (defun elfeed-untag (entry-or-entry-list &rest tags)
   "Remove TAGS from ENTRY-OR-ENTRY-LIST and run `elfeed-untag-hooks'."
+  (elfeed-db-ensure)
   (let ((entries (ensure-list entry-or-entry-list)))
+    (funcall (elfeed-db-vtbl-untag elfeed-db-vtbl) entry-or-entry-list tags)
     (run-hook-with-args 'elfeed-untag-hooks entries tags)
     (cl-loop for entry in entries do (apply #'elfeed-untag-1 entry tags))))
 
@@ -222,7 +232,12 @@ Additional tag lists can be given as MORE-TAGS."
 (defun elfeed-db-last-update ()
   "Return the last database update time in (`float-time') seconds."
   (elfeed-db-ensure)
-  (or (plist-get elfeed-db :last-update) 0))
+  (funcall (elfeed-db-vtbl-last-update elfeed-db-vtbl)))
+
+(defun elfeed-db-for-each (function)
+  "Call FUNCTION with every entry id from newest to oldest."
+  (elfeed-db-ensure)
+  (funcall (elfeed-db-vtbl-for-each elfeed-db-vtbl) function))
 
 (defmacro elfeed-db-visit (binds &rest body)
   "Visit each entry in the database from newest to oldest.
@@ -240,14 +255,12 @@ BINDS are the bindings for entry and optionally feed around BODY.
   `(catch 'elfeed-db-done
      (prog1 nil
        (elfeed-db-ensure)
-       (avl-tree-mapc
-        (lambda (id)
-          (let* ((,(car binds) (elfeed-db-get-entry id))
-                 ,@(and (cdr binds)
-                        (string-match-p "\\`[^_]" (symbol-name (cadr binds)))
-                        `((,@(cdr binds) (elfeed-entry-feed ,(car binds))))))
-            ,@body))
-        elfeed-db-index))))
+       (elfeed-db-for-each (lambda (id)
+                             (let* ((,(car binds) (elfeed-db-get-entry id))
+                                    ,@(and (cdr binds)
+                                           (string-match-p "\\`[^_]" (symbol-name (cadr binds)))
+                                           `((,@(cdr binds) (elfeed-entry-feed ,(car binds))))))
+                               ,@body))))))
 
 ;; I prefer if everything lives inside the elfeed-* namespace. Nevertheless keep
 ;; the old name for backward compatibility, since it is widely used in packages
@@ -257,14 +270,16 @@ BINDS are the bindings for entry and optionally feed around BODY.
 (defun elfeed-feed-entries (feed-or-id)
   "Return a list of all entries for a particular feed.
 The FEED-OR-ID may be a feed struct or a feed ID (url)."
-  (let ((feed-id (if (elfeed-feed-p feed-or-id)
-                     (elfeed-feed-id feed-or-id)
-                   feed-or-id)))
-    (let ((entries))
-      (elfeed-db-visit (entry feed)
-        (when (equal (elfeed-feed-id feed) feed-id)
-          (push entry entries)))
-      (nreverse entries))))
+  (if-let* ((feed-entries (elfeed-db-vtbl-feed-entries elfeed-db-vtbl)))
+      (funcall feed-entries feed-or-id)
+    (let ((feed-id (if (elfeed-feed-p feed-or-id)
+                       (elfeed-feed-id feed-or-id)
+                     feed-or-id)))
+      (let ((entries))
+        (elfeed-db-visit (entry feed)
+                         (when (equal (elfeed-feed-id feed) feed-id)
+                           (push entry entries)))
+        (nreverse entries)))))
 
 (defun elfeed-apply-hooks-now ()
   "Apply `elfeed-new-entry-hook' to all entries in the database."
@@ -279,88 +294,39 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defun elfeed-db-get-all-tags ()
   "Return a list of all tags currently in the database."
-  (let ((table (make-hash-table :test 'eq)))
-    (elfeed-db-visit (e)
-      (dolist (tag (elfeed-entry-tags e))
-        (setf (gethash tag table) tag)))
-    (let ((tags ()))
-      (maphash (lambda (k _) (push k tags)) table)
-      (sort tags #'string<))))
+  (if-let* ((get-all-tags (elfeed-db-vtbl-get-all-tags elfeed-db-vtbl)))
+      (funcall get-all-tags)
+    (let ((table (make-hash-table :test 'eq)))
+      (elfeed-db-visit (e)
+                       (dolist (tag (elfeed-entry-tags e))
+                         (setf (gethash tag table) tag)))
+      (let ((tags ()))
+        (maphash (lambda (k _) (push k tags)) table)
+        (sort tags #'string<)))))
 
 ;; Saving and Loading:
 
 (defun elfeed-db-save ()
   "Write the database index to the filesystem."
   (elfeed-db-ensure)
-  (setf elfeed-db (plist-put elfeed-db :version elfeed-db-version))
-  (mkdir elfeed-db-directory t)
-  (let* ((coding-system-for-write 'utf-8)
-         (dest (expand-file-name "index" elfeed-db-directory))
-         (temp (concat dest ".tmp"))
-         (write-region-inhibit-fsync nil))
-    ;; We write to a temporary file and rename to avoid corrupting the database
-    ;; on crash. `file-precious-flag' is insufficient as it only works for
-    ;; `save-buffer'.
-    (with-temp-file temp
-      (let ((standard-output (current-buffer))
-            (print-level nil)
-            (print-length nil)
-            (print-circle nil))
-        (princ (format ";;; Elfeed Database Index (version %s)\n\n"
-                       elfeed-db-version))
-        (prin1 elfeed-db)))
-    (rename-file temp dest t)
-    :success))
+  (funcall (elfeed-db-vtbl-save elfeed-db-vtbl)))
 
 (defun elfeed-db-save-safe ()
   "Run `elfeed-db-save' without triggering any errors, for use as a safe hook."
   (ignore-errors (elfeed-db-save)))
 
-(defun elfeed-db--empty ()
-  "Create an empty database object."
-  `(:version ,elfeed-db-version
-    :feeds ,(make-hash-table :test 'equal)
-    :entries ,(make-hash-table :test 'equal)
-    ;; Compiler may warn about this (bug#15327):
-    :index ,(avl-tree-create #'elfeed-db-compare)))
-
 (defun elfeed-db-upgrade (_db)
   "Upgrade the database DB from a previous format."
   (error "Upgrade is not supported"))
-(make-obsolete 'elfeed-db-upgrade nil "3.4.2")
+(make-obsolete 'elfeed-db-upgrade "use instead `elfeed-db-classic-upgrade'." "3.4.2")
 
 (defun elfeed-db-load ()
   "Load the database index from the filesystem."
-  (let ((index (expand-file-name "index" elfeed-db-directory))
-        (enable-local-variables nil)) ; don't set local variables from index!
-    (if (not (file-exists-p index))
-        (setf elfeed-db (elfeed-db--empty))
-      ;; Override the default value for major-mode. There is no
-      ;; preventing find-file-noselect from starting the default major
-      ;; mode while also having it handle buffer conversion. Some
-      ;; major modes crash Emacs when enabled in large buffers (e.g.
-      ;; org-mode). This includes the Elfeed index, so we must not let
-      ;; this happen.
-      (cl-letf (((default-value 'major-mode) 'fundamental-mode))
-        (with-current-buffer (find-file-noselect index :nowarn)
-          (goto-char (point-min))
-          (if (eql elfeed-db-version 4)
-              ;; May need to skip over dummy database
-              (let ((db-1 (read (current-buffer)))
-                    (db-2 (ignore-errors (read (current-buffer)))))
-                (setf elfeed-db (or db-2 db-1)))
-            ;; Just load first database
-            (setf elfeed-db (read (current-buffer))))
-          (kill-buffer))))
-    ;; Perform an upgrade if necessary and possible
-    (unless (equal (plist-get elfeed-db :version) elfeed-db-version)
-      (setq elfeed-db nil)
-      (error "Elfeed database format is outdated.  Please upgrade first using an older version of Elfeed"))
-    (setf elfeed-db-feeds (plist-get elfeed-db :feeds)
-          elfeed-db-entries (plist-get elfeed-db :entries)
-          elfeed-db-index (plist-get elfeed-db :index)
-          ;; Internal function use required for security!
-          (avl-tree--cmpfun elfeed-db-index) #'elfeed-db-compare)))
+  (funcall (elfeed-db-vtbl-load elfeed-db-vtbl)))
+
+(defun elfeed-db-loaded-p ()
+  "Load the database index from the filesystem."
+  (funcall (elfeed-db-vtbl-loaded-p elfeed-db-vtbl)))
 
 (defun elfeed-db-unload ()
   "Unload the database so that it can be operated on externally.
@@ -368,23 +334,17 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 Runs `elfeed-db-unload-hook' after unloading the database."
   (interactive)
   (elfeed-db-save)
-  (setf elfeed-db nil
-        elfeed-db-feeds nil
-        elfeed-db-entries nil
-        elfeed-db-index nil)
+  (funcall (elfeed-db-vtbl-unload-1 elfeed-db-vtbl))
   (run-hooks 'elfeed-db-unload-hook))
 
 (defun elfeed-db-ensure ()
   "Ensure that the database has been loaded."
-  (unless elfeed-db (elfeed-db-load)))
+  (unless (elfeed-db-loaded-p) (elfeed-db-load)))
 
 (defun elfeed-db-size ()
   "Return a count of the number of entries in the database."
-  (let ((count-table (hash-table-count elfeed-db-entries))
-        (count-tree (avl-tree-size elfeed-db-index)))
-    (if (= count-table count-tree)
-        count-table
-      (error "Elfeed database error: entry count mismatch"))))
+  (elfeed-db-ensure)
+  (funcall (elfeed-db-vtbl-size elfeed-db-vtbl)))
 
 ;; Metadata:
 
@@ -534,13 +494,8 @@ supported by the database format."
 
 (defun elfeed-db-gc-empty-feeds ()
   "Remove feeds with no entries from the database."
-  (let ((seen (make-hash-table :test 'equal)))
-    (elfeed-db-visit (entry feed)
-      (setf (gethash (elfeed-feed-id feed) seen) feed))
-    (maphash (lambda (id _)
-               (unless (gethash id seen)
-                 (remhash id elfeed-db-feeds)))
-             elfeed-db-feeds)))
+  (elfeed-db-ensure)
+  (funcall (elfeed-db-vtbl-gc-empty-feeds elfeed-db-vtbl)))
 
 (defun elfeed-db--scan-1 (cb obj)
   "Scan OBJ for `elfeed-ref' references and call CB for each reference."
@@ -570,25 +525,7 @@ supported by the database format."
   "Clean up unused content from the content database.
 If STATS-P is true, return the space cleared in bytes."
   (elfeed-db-gc-empty-feeds)
-  (let* ((data (expand-file-name "data" elfeed-db-directory))
-         (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
-         (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
-         (table (make-hash-table :test #'equal)))
-    (dolist (id ids)
-      (setf (gethash id table) nil))
-    (elfeed-db--scan
-     (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
-    (cl-loop for id hash-keys of table using (hash-value used)
-             for used-p = (or used (member id '("." "..")))
-             when (and (not used-p) stats-p)
-             sum (let* ((ref (elfeed-ref--create :id id))
-                        (file (elfeed-ref--file ref)))
-                   (* 1.0 (nth 7 (file-attributes file))))
-             unless used-p
-             do (elfeed-ref-delete (elfeed-ref--create :id id))
-             finally (cl-loop for dir in dirs
-                              when (directory-empty-p dir)
-                              do (delete-directory dir)))))
+  (funcall (elfeed-db-vtbl-gc elfeed-db-vtbl) stats-p))
 
 (defun elfeed-db-pack ()
   "Pack all content into a single archive for efficient storage."
@@ -639,6 +576,212 @@ gzip-compressed files, so the gzip program must be in your PATH."
 (defun elfeed-db-gc-safe ()
   "Run `elfeed-db-gc' without triggering any errors, for use as a safe hook."
   (ignore-errors (elfeed-db-gc)))
+
+;; Classic database implementation
+
+(define-obsolete-variable-alias 'elfeed-db 'elfeed-db-classic "3.4.3")
+(defvar elfeed-db-classic nil
+  "The core database for elfeed.")
+
+(define-obsolete-variable-alias 'elfeed-db-feeds 'elfeed-db-classic-feeds "3.4.3")
+(defvar elfeed-db-classic-feeds nil
+  "Feeds hash table, part of `elfeed-db'.")
+
+(define-obsolete-variable-alias 'elfeed-db-entries 'elfeed-db-classic-entries "3.4.3")
+(defvar elfeed-db-classic-entries nil
+  "Entries hash table, part of `elfeed-db'.")
+
+(define-obsolete-variable-alias 'elfeed-db-index 'elfeed-db-classic-index "3.4.3")
+(defvar elfeed-db-classic-index nil
+  "Collection of all entries sorted by date, part of `elfeed-db'.")
+
+(define-obsolete-variable-alias 'elfeed-db-version 'elfeed-db-classic-version "3.4.3")
+(defvar elfeed-db-classic-version 4
+  "The database version this version of Elfeed expects to use.")
+
+(defun elfeed-db-classic--empty ()
+  "Create an empty database object."
+  `(:version ,elfeed-db-classic-version
+    :feeds ,(make-hash-table :test 'equal)
+    :entries ,(make-hash-table :test 'equal)
+    ;; Compiler may warn about this (bug#15327):
+    :index ,(avl-tree-create #'elfeed-db-compare)))
+
+(defun elfeed-db-classic-get-feed (id)
+  "Get/create the feed for ID."
+  (with-memoization (gethash id elfeed-db-classic-feeds)
+    (elfeed-feed--create :id id)))
+
+(defun elfeed-db-classic-get-entry (id)
+  "Get the entry for ID."
+  (gethash id elfeed-db-classic-entries))
+
+(defun elfeed-db-classic-set-update-time-1 ()
+  "Update the database last-update time."
+  (setf elfeed-db (plist-put elfeed-db :last-update (float-time))))
+
+(defun elfeed-db-classic-add (entries)
+  "Add ENTRIES to the database."
+  (cl-loop for entry in entries
+           for id = (elfeed-entry-id entry)
+           for original = (gethash id elfeed-db-classic-entries)
+           for new-date = (elfeed-entry-date entry)
+           for original-date = (and original (elfeed-entry-date original))
+           do (elfeed-deref-entry entry)
+           when original count
+           (if (= new-date original-date)
+               (elfeed-entry-merge original entry)
+             (avl-tree-delete elfeed-db-classic-index id)
+             (prog1 (elfeed-entry-merge original entry)
+               (avl-tree-enter elfeed-db-classic-index id)))
+           into change-count
+           else count
+           (setf (gethash id elfeed-db-classic-entries) entry)
+           into change-count
+           and do
+           (progn
+             (avl-tree-enter elfeed-db-classic-index id)
+             (run-hook-with-args 'elfeed-new-entry-hook entry))
+           finally
+           (unless (zerop change-count)
+             (elfeed-db-set-update-time)))
+  :success)
+
+(defun elfeed-db-classic-delete (entries)
+  "Delete ENTRIES from database."
+  (when entries
+    (dolist (entry entries)
+      (let ((id (elfeed-entry-id entry)))
+        (avl-tree-delete elfeed-db-classic-index id)
+        (remhash id elfeed-db-classic-entries)))
+    (elfeed-db-set-update-time))
+  :success)
+
+;; no-ops because `elfeed-tag-1' already accomplishes the same thing
+(defalias 'elfeed-db-classic-tag #'ignore
+  "Modify the database to add TAGS to entries in ENTRY-OR-ENTRY-LIST.")
+(defalias 'elfeed-db-classic-untag #'ignore
+  "Modify the database to remove TAGS to entries in ENTRY-OR-ENTRY-LIST.")
+
+(defun elfeed-db-classic-last-update ()
+  "Return the last database update time in (`float-time') seconds."
+  (or (plist-get elfeed-db :last-update) 0))
+
+(defun elfeed-db-classic-for-each (function)
+  "Call FUNCTION with every entry id from newest to oldest."
+  (avl-tree-mapc
+   function
+   elfeed-db-classic-index))
+
+(defun elfeed-db-classic-save ()
+  "Write the database index to the filesystem."
+  (elfeed-db-ensure)
+  (setf elfeed-db (plist-put elfeed-db :version elfeed-db-classic-version))
+  (mkdir elfeed-db-directory t)
+  (let* ((coding-system-for-write 'utf-8)
+         (dest (expand-file-name "index" elfeed-db-directory))
+         (temp (concat dest ".tmp"))
+         (write-region-inhibit-fsync nil))
+    ;; We write to a temporary file and rename to avoid corrupting the database
+    ;; on crash. `file-precious-flag' is insufficient as it only works for
+    ;; `save-buffer'.
+    (with-temp-file temp
+      (let ((standard-output (current-buffer))
+            (print-level nil)
+            (print-length nil)
+            (print-circle nil))
+        (princ (format ";;; Elfeed Database Index (version %s)\n\n"
+                       elfeed-db-classic-version))
+        (prin1 elfeed-db)))
+    (rename-file temp dest t)
+    :success))
+
+(defun elfeed-db-classic-load ()
+  "Load the database index from the filesystem."
+  (let ((index (expand-file-name "index" elfeed-db-directory))
+        (enable-local-variables nil)) ; don't set local variables from index!
+    (if (not (file-exists-p index))
+        (setf elfeed-db (elfeed-db-classic--empty))
+      ;; Override the default value for major-mode. There is no
+      ;; preventing find-file-noselect from starting the default major
+      ;; mode while also having it handle buffer conversion. Some
+      ;; major modes crash Emacs when enabled in large buffers (e.g.
+      ;; org-mode). This includes the Elfeed index, so we must not let
+      ;; this happen.
+      (cl-letf (((default-value 'major-mode) 'fundamental-mode))
+        (with-current-buffer (find-file-noselect index :nowarn)
+          (goto-char (point-min))
+          (if (eql elfeed-db-classic-version 4)
+              ;; May need to skip over dummy database
+              (let ((db-1 (read (current-buffer)))
+                    (db-2 (ignore-errors (read (current-buffer)))))
+                (setf elfeed-db (or db-2 db-1)))
+            ;; Just load first database
+            (setf elfeed-db (read (current-buffer))))
+          (kill-buffer))))
+    ;; Perform an upgrade if necessary and possible
+    (unless (equal (plist-get elfeed-db :version) elfeed-db-classic-version)
+      (setq elfeed-db nil)
+      (error "Elfeed database format is outdated.  Please upgrade first using an older version of Elfeed"))
+    (setf elfeed-db-classic-feeds (plist-get elfeed-db :feeds)
+          elfeed-db-classic-entries (plist-get elfeed-db :entries)
+          elfeed-db-classic-index (plist-get elfeed-db :index)
+          ;; Internal function use required for security!
+          (avl-tree--cmpfun elfeed-db-classic-index) #'elfeed-db-compare)))
+
+(defun elfeed-db-classic-loaded-p ()
+  "Predicate for whether the database has been loaded.
+This function does not call `elfeed-db-ensure'."
+  elfeed-db)
+
+(defun elfeed-db-classic-unload-1 ()
+  "Unload the database so that it can be operated on externally."
+  (interactive)
+  (setf elfeed-db nil
+        elfeed-db-classic-feeds nil
+        elfeed-db-classic-entries nil
+        elfeed-db-classic-index nil))
+
+(defun elfeed-db-classic-size ()
+  "Return a count of the number of entries in the database."
+  (let ((count-table (hash-table-count elfeed-db-classic-entries))
+        (count-tree (avl-tree-size elfeed-db-classic-index)))
+    (if (= count-table count-tree)
+        count-table
+      (error "Elfeed database error: entry count mismatch"))))
+
+(defun elfeed-db-classic-gc-empty-feeds ()
+  "Remove feeds with no entries from the database."
+  (let ((seen (make-hash-table :test 'equal)))
+    (elfeed-db-visit (entry feed)
+      (setf (gethash (elfeed-feed-id feed) seen) feed))
+    (maphash (lambda (id _)
+               (unless (gethash id seen)
+                 (remhash id elfeed-db-classic-feeds)))
+             elfeed-db-classic-feeds)))
+
+(defun elfeed-db-classic-gc (&optional stats-p)
+  "Clean up unused content from the content database.
+If STATS-P is true, return the space cleared in bytes."
+  (let* ((data (expand-file-name "data" elfeed-db-directory))
+         (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
+         (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
+         (table (make-hash-table :test #'equal)))
+    (dolist (id ids)
+      (setf (gethash id table) nil))
+    (elfeed-db--scan
+     (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
+    (cl-loop for id hash-keys of table using (hash-value used)
+             for used-p = (or used (member id '("." "..")))
+             when (and (not used-p) stats-p)
+             sum (let* ((ref (elfeed-ref--create :id id))
+                        (file (elfeed-ref--file ref)))
+                   (* 1.0 (nth 7 (file-attributes file))))
+             unless used-p
+             do (elfeed-ref-delete (elfeed-ref--create :id id))
+             finally (cl-loop for dir in dirs
+                              when (directory-empty-p dir)
+                              do (delete-directory dir)))))
 
 (unless noninteractive
   (add-hook 'kill-emacs-hook #'elfeed-db-gc-safe :append)

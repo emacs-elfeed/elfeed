@@ -1,3 +1,4 @@
+elfeed.elc: elfeed-db.el elfeed-lib.el elfeed-log.el elfeed-curl.el elfeed-csv.el elfeed-show.el elfeed-search.el elfeed-tree.el
 elfeed-csv.elc: elfeed-db.el
 elfeed-curl.elc: elfeed-lib.el elfeed-log.el
 elfeed-db.elc: elfeed-lib.el
@@ -7,7 +8,6 @@ elfeed-log.elc:
 elfeed-search.elc: elfeed.el
 elfeed-show.elc: elfeed.el elfeed-search.el
 elfeed-tree.elc: elfeed.el elfeed-search.el
-elfeed.elc: elfeed-db.el elfeed-lib.el elfeed-log.el elfeed-curl.el elfeed-csv.el elfeed-show.el elfeed-search.el elfeed-tree.el
 xml-query.elc:
 tests/elfeed-curl-tests.elc: elfeed-lib.el elfeed-curl.el
 tests/elfeed-db-tests.elc: elfeed.el elfeed-db.el elfeed-lib.el

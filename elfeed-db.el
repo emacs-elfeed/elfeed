@@ -128,8 +128,7 @@ If STATS-P is true, return the space cleared in bytes."))
                                   :loaded-p #'elfeed-db-classic-loaded-p
                                   :unload-1 #'elfeed-db-classic-unload-1
                                   :size #'elfeed-db-classic-size
-                                  :gc-empty-feeds #'elfeed-db-classic-gc-empty-feeds
-                                  :gc #'elfeed-db-classic-gc)
+                                  :gc-empty-feeds #'elfeed-db-classic-gc-empty-feeds)
   "Database vtable using the classic implementation.")
 
 (defconst elfeed-db-vtbl-sqlite (elfeed-db-vtbl-create
@@ -140,12 +139,14 @@ If STATS-P is true, return the space cleared in bytes."))
                                  :delete #'elfeed-db-sqlite-delete
                                  :tag #'elfeed-db-sqlite-tag
                                  :untag #'elfeed-db-sqlite-untag
+                                 :last-update #'elfeed-db-sqlite-last-update
                                  :for-each #'elfeed-db-sqlite-for-each
                                  :save #'elfeed-db-sqlite-save
-                                 :unload-1 #'elfeed-db-sqlite-unload-1
                                  :load #'elfeed-db-sqlite-load
                                  :loaded-p #'elfeed-db-sqlite-loaded-p
-                                 :size #'elfeed-db-sqlite-size)
+                                 :unload-1 #'elfeed-db-sqlite-unload-1
+                                 :size #'elfeed-db-sqlite-size
+                                 :gc-empty-feeds #'elfeed-db-sqlite-gc-empty-feeds)
   "Database vtable using the sqlite implementation.")
 
 (defvar elfeed-db-vtbl elfeed-db-vtbl-classic
@@ -541,7 +542,27 @@ supported by the database format."
   "Clean up unused content from the content database.
 If STATS-P is true, return the space cleared in bytes."
   (elfeed-db-gc-empty-feeds)
-  (funcall (elfeed-db-vtbl-gc elfeed-db-vtbl) stats-p))
+  (if-let* ((gc (elfeed-db-vtbl-gc elfeed-db-vtbl)))
+      (funcall gc stats-p)
+    (let* ((data (expand-file-name "data" elfeed-db-directory))
+           (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
+           (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
+           (table (make-hash-table :test #'equal)))
+      (dolist (id ids)
+        (setf (gethash id table) nil))
+      (elfeed-db--scan
+       (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
+      (cl-loop for id hash-keys of table using (hash-value used)
+               for used-p = (or used (member id '("." "..")))
+               when (and (not used-p) stats-p)
+               sum (let* ((ref (elfeed-ref--create :id id))
+                          (file (elfeed-ref--file ref)))
+                     (* 1.0 (nth 7 (file-attributes file))))
+               unless used-p
+               do (elfeed-ref-delete (elfeed-ref--create :id id))
+               finally (cl-loop for dir in dirs
+                                when (directory-empty-p dir)
+                                do (delete-directory dir))))))
 
 (defun elfeed-db-pack ()
   "Pack all content into a single archive for efficient storage."
@@ -776,29 +797,6 @@ This function does not call `elfeed-db-ensure'."
                  (remhash id elfeed-db-classic-feeds)))
              elfeed-db-classic-feeds)))
 
-(defun elfeed-db-classic-gc (&optional stats-p)
-  "Clean up unused content from the content database.
-If STATS-P is true, return the space cleared in bytes."
-  (let* ((data (expand-file-name "data" elfeed-db-directory))
-         (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
-         (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
-         (table (make-hash-table :test #'equal)))
-    (dolist (id ids)
-      (setf (gethash id table) nil))
-    (elfeed-db--scan
-     (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
-    (cl-loop for id hash-keys of table using (hash-value used)
-             for used-p = (or used (member id '("." "..")))
-             when (and (not used-p) stats-p)
-             sum (let* ((ref (elfeed-ref--create :id id))
-                        (file (elfeed-ref--file ref)))
-                   (* 1.0 (nth 7 (file-attributes file))))
-             unless used-p
-             do (elfeed-ref-delete (elfeed-ref--create :id id))
-             finally (cl-loop for dir in dirs
-                              when (directory-empty-p dir)
-                              do (delete-directory dir)))))
-
 ;; Sqlite implementation
 
 (defvar elfeed-db-sqlite nil
@@ -856,12 +854,6 @@ WHERE id == $1"
 (defun elfeed-db-sqlite-add (entries)
 ;;   (cl-loop for entry in entries
 ;;            for id = (elfeed-entry-id entry)
-;;            for original = (elfeed-db-sqlite-get-entry id)
-;;            ;; for new-date = (elfeed-entry-date entry)
-;;            ;; for original-date = (and original (elfeed-entry-date original))
-;;            ;; when original count
-;;            ;; ()
-
 ;;            for values = (list (prin1-to-string id)
 ;;                               (prin1-to-string (elfeed-entry-title entry))
 ;;                               (prin1-to-string (elfeed-entry-link entry))
@@ -870,35 +862,14 @@ WHERE id == $1"
 ;;                               (prin1-to-string (elfeed-entry-content-type entry))
 ;;                               (prin1-to-string (elfeed-entry-feed-id entry))
 ;;                               (prin1-to-string (elfeed-entry-meta entry)))
-;;            count (progn
-;;                    (sqlite-select elfeed-db-sqlite
-;;                                   "INSERT INTO entry(id, title, link, date, content, content_type, feed_id, meta)
+;;            do (progn
+;;                 (sqlite-select elfeed-db-sqlite
+;;                                "INSERT INTO entry(id, title, link, date, content, content_type, feed_id, meta)
 ;; VALUES($1, $2, $3, $4, $5, $6, $7, $8)
 ;; ON CONFLICT(id) DO NOTHING"
-;;                                   values)
-;;                    (elfeed-entry-merge original entry))
-;;            into change-count
-;;            finally do
-;;            (unless (zerop change-count)
-;;              (elfeed-db-set-update-time)))
-
-  (cl-loop for entry in entries
-           for id = (elfeed-entry-id entry)
-           for values = (list (prin1-to-string id)
-                              (prin1-to-string (elfeed-entry-title entry))
-                              (prin1-to-string (elfeed-entry-link entry))
-                              (elfeed-entry-date entry)
-                              (prin1-to-string (elfeed-entry-content entry))
-                              (prin1-to-string (elfeed-entry-content-type entry))
-                              (prin1-to-string (elfeed-entry-feed-id entry))
-                              (prin1-to-string (elfeed-entry-meta entry)))
-           do (progn
-                (sqlite-select elfeed-db-sqlite
-                               "INSERT INTO entry(id, title, link, date, content, content_type, feed_id, meta)
-VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT(id) DO NOTHING"
-                               values)
-                (elfeed-db-sqlite-tag (list entry) (elfeed-entry-tags entry)))))
+;;                                values)
+;;                 (elfeed-db-sqlite-tag (list entry) (elfeed-entry-tags entry))))
+  (error "todo"))
 
 (defun elfeed-db-sqlite-delete (entries)
   (cl-loop for entry in entries
@@ -912,12 +883,16 @@ WHERE id == $1"
     (dolist (tag tags)
       (sqlite-select elfeed-db-sqlite "INSERT OR REPLACE INTO entry_tag(entry_id, tag) VALUES($1, $2)"
                      (list (prin1-to-string (elfeed-entry-id entry)) (symbol-name tag))))))
+
 (defun elfeed-db-sqlite-untag (entries tags)
   (dolist (entry entries)
     (dolist (tag tags)
       (sqlite-select elfeed-db-sqlite "DELETE FROM entry_tag
 WHERE entry_id == $1 AND tag == $2"
                      (list (prin1-to-string (elfeed-entry-id entry)) (symbol-name tag))))))
+
+(defun elfeed-db-sqlite-last-update ()
+  (car (sqlite-select elfeed-db-sqlite "SELECT version FROM metadata")))
 
 (defun elfeed-db-sqlite-for-each (function)
   (let ((set (sqlite-select elfeed-db-sqlite
@@ -930,10 +905,6 @@ ORDER BY date DESC"
 
 (defun elfeed-db-sqlite-save ()
   (sqlite-commit elfeed-db-sqlite))
-
-(defun elfeed-db-sqlite-unload-1 ()
-  (sqlite-close elfeed-db-sqlite)
-  (setq elfeed-db-sqlite nil))
 
 (defun elfeed-db-sqlite-load ()
   "Load the sqlite database."
@@ -997,8 +968,17 @@ UNIQUE(enforcer)
   "Return non-nil when the database is loaded."
   elfeed-db-sqlite)
 
+(defun elfeed-db-sqlite-unload-1 ()
+  (sqlite-close elfeed-db-sqlite)
+  (setq elfeed-db-sqlite nil))
+
 (defun elfeed-db-sqlite-size ()
   (caar (sqlite-select elfeed-db-sqlite "SELECT COUNT(1) FROM entry")))
+
+(defun elfeed-db-sqlite-gc-empty-feeds ()
+  (sqlite-execute elfeed-db-sqlite
+                  "DELETE FROM feed
+WHERE feed.id NOT IN (SELECT feed_id FROM entry)"))
 
 (unless noninteractive
   (add-hook 'kill-emacs-hook #'elfeed-db-gc-safe :append)

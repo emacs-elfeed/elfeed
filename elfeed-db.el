@@ -229,7 +229,7 @@ Additional tag lists can be given as MORE-TAGS."
   "Add TAGS to ENTRY-OR-ENTRY-LIST and run `elfeed-tag-hooks'."
   (elfeed-db-ensure)
   (let ((entries (ensure-list entry-or-entry-list)))
-    (funcall (elfeed-db-vtbl-tag elfeed-db-vtbl) entry-or-entry-list tags)
+    (funcall (elfeed-db-vtbl-tag elfeed-db-vtbl) entries tags)
     (run-hook-with-args 'elfeed-tag-hooks entries tags)
     (cl-loop for entry in entries do (apply #'elfeed-tag-1 entry tags))))
 
@@ -237,7 +237,7 @@ Additional tag lists can be given as MORE-TAGS."
   "Remove TAGS from ENTRY-OR-ENTRY-LIST and run `elfeed-untag-hooks'."
   (elfeed-db-ensure)
   (let ((entries (ensure-list entry-or-entry-list)))
-    (funcall (elfeed-db-vtbl-untag elfeed-db-vtbl) entry-or-entry-list tags)
+    (funcall (elfeed-db-vtbl-untag elfeed-db-vtbl) entries tags)
     (run-hook-with-args 'elfeed-untag-hooks entries tags)
     (cl-loop for entry in entries do (apply #'elfeed-untag-1 entry tags))))
 
@@ -916,8 +916,8 @@ WHERE id == $1"
   (dolist (entry entries)
     (dolist (tag tags)
       (sqlite-select elfeed-db-sqlite "DELETE FROM entry_tag
-WHERE entry_id == $1 && tag == $2"
-                     (list (elfeed-entry-id entry) (symbol-name tag))))))
+WHERE entry_id == $1 AND tag == $2"
+                     (list (prin1-to-string (elfeed-entry-id entry)) (symbol-name tag))))))
 
 (defun elfeed-db-sqlite-for-each (function)
   (let ((set (sqlite-select elfeed-db-sqlite

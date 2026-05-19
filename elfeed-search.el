@@ -46,6 +46,11 @@
 The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")
 
+(defcustom elfeed-search-separators t
+  "Add separators to Elfeed entries according to their date."
+  :group 'elfeed
+  :type 'boolean)
+
 (defcustom elfeed-search-update-delay 0.2
   "Delay search buffer updates to avoid redundant redraws.
 The delay is in seconds."
@@ -297,7 +302,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
   (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
   (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)
-  (add-hook 'elfeed-search-update-hook #'elfeed-search-add-separators))
+
+  (when elfeed-search-separators
+    (add-hook 'elfeed-search-update-hook #'elfeed-search-add-separators)))
 
 (defun elfeed-search--header ()
   "Computes the string to be used as the Elfeed header."

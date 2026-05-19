@@ -41,7 +41,7 @@
 (defvar elfeed-search-last-update 0
   "The last time the buffer was redrawn in epoch seconds.")
 
-(defvar elfeed-search-update-hook (list #'elfeed-search-add-separators)
+(defvar elfeed-search-update-hook ()
   "List of functions to run immediately following a search buffer update.
 The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")
@@ -291,6 +291,14 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      elfeed-log-error-count))
             " ")))
 
+(defun elfeed-search--hooks-setup ()
+  "Set up the necessary hooks for `elfeed-search-mode'."
+  (add-hook 'minibuffer-setup-hook 'elfeed-search--minibuffer-setup)
+  (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
+  (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
+  (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)
+  (add-hook 'elfeed-search-update-hook #'elfeed-search-add-separators))
+
 (defun elfeed-search--header ()
   "Computes the string to be used as the Elfeed header."
   (cond
@@ -364,9 +372,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
               hl-line-sticky-flag t)
   (buffer-disable-undo)
   (hl-line-mode)
-  (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
-  (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
-  (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)
+  (elfeed-search--hooks-setup)
   (elfeed-db--save-on-quit)
   (elfeed-search-update :force))
 
@@ -1357,8 +1363,6 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
     (set-syntax-table elfeed-search-filter-syntax-table)
     (when (eq :live elfeed-search-filter-active)
       (add-hook 'post-command-hook 'elfeed-search--live-update nil :local))))
-
-(add-hook 'minibuffer-setup-hook 'elfeed-search--minibuffer-setup)
 
 (defun elfeed-search--live-update ()
   "Update the `elfeed-search' buffer based on the contents of the minibuffer."

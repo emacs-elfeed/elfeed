@@ -522,42 +522,58 @@ never show a relative time."
                  'follow-link [elfeed-tag]))
    tags ","))
 
-(defun elfeed-search-print-entry--default (entry)
-  "Print ENTRY to the buffer."
+(defun elfeed-search-format-column--date (entry)
+  "Format the date information for ENTRY."
+  (let ((date (elfeed-search-format-date (elfeed-entry-date entry))))
+    (elfeed-add-properties date
+                           'face 'elfeed-search-date-face
+                           'mouse-face 'highlight
+                           'follow-link [elfeed-date])))
+
+(defun elfeed-search-format-column--title (entry)
+  "Format the title information for ENTRY."
   (let* ((tags (elfeed-entry-tags entry))
-         (date (elfeed-search-format-date (elfeed-entry-date entry)))
          (title (elfeed-meta--title entry))
          (title (if (or (not title) (equal title ""))
                     (elfeed-entry-link entry)
                   title))
          (title-faces (elfeed-search--faces tags))
-         (feed (elfeed-entry-feed entry))
-         (feed-title (and feed (elfeed-meta--title feed)))
          (window (get-buffer-window))
          (title-width (elfeed-clamp
                        elfeed-search-title-min-width
                        (- (if window (window-width window) (frame-width))
-                         10 elfeed-search-trailing-width)
+                          10 elfeed-search-trailing-width)
                        elfeed-search-title-max-width))
-         (title-column (elfeed-format-column title title-width :left))
-         (date-width (cadr elfeed-search-date-format)))
-    (insert (elfeed-add-properties date
-                                   'face 'elfeed-search-date-face
-                                   'mouse-face 'highlight
-                                   'follow-link [elfeed-date])
-            (propertize " " 'display `(space :align-to ,(1+ date-width)))
-            (elfeed-add-properties title-column
-                                   'face title-faces
-                                   'mouse-face 'highlight
-                                   'follow-link [elfeed-entry]))
-    (when feed-title
-      (insert (propertize " " 'display `( space :align-to
-                                          ,(+ 2 date-width title-width)))
-              (propertize feed-title 'face 'elfeed-search-feed-face
-                          'mouse-face 'highlight
-                          'follow-link [elfeed-feed])))
-    (when tags
-      (insert " (" (elfeed-search--format-tags tags) ")"))))
+         (title-column (elfeed-format-column title title-width :left)))
+    (elfeed-add-properties title-column
+                           'face title-faces 'kbd-help title
+                           'mouse-face 'highlight
+                           'follow-link [elfeed-entry])))
+
+(defun elfeed-search-format-column--feed (entry)
+  "Format the feed information for ENTRY."
+  (if-let* ((feed (elfeed-entry-feed entry))
+            (feed-title (and feed (elfeed-meta--title feed))))
+      (propertize feed-title 'face 'elfeed-search-feed-face
+                  'mouse-face 'highlight
+                  'follow-link [elfeed-feed])))
+
+(defun elfeed-search-format-column--tags (entry)
+  "Format the tags information for ENTRY."
+  (if-let ((tags (elfeed-entry-tags entry)))
+      (concat "(" (elfeed-search--format-tags tags) ")")))
+
+(defun elfeed-search-print-entry--default (entry)
+  "Print ENTRY to the buffer."
+  (let ((date (elfeed-search-format-column--date entry))
+        (title (elfeed-search-format-column--title entry))
+        (feed (elfeed-search-format-column--feed entry))
+        (tags (elfeed-search-format-column--tags entry)))
+    (insert
+     (concat
+      date " " title
+      (when feed (concat " " feed))
+      (when tags (concat " " tags))))))
 
 (defun elfeed-search-parse-filter (filter)
   "Parse the elements of a search FILTER into a plist."

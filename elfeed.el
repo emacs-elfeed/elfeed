@@ -930,12 +930,25 @@ saved to your customization file."
                        (cdr str) 'elfeed-header-button (car str))))
     (call-interactively button)))
 
+(defvar elfeed--header-button-keymap
+  (let ((map (make-sparse-keymap)))
+    ;; Attach the click handler directly to the button text so it wins
+    ;; over the global `<header-line> <mouse-1>' binding regardless of
+    ;; the buffer's major/minor-mode maps.  Bind `down-mouse-1' to
+    ;; `ignore' so `mouse-drag-header-line' does not consume the press
+    ;; before `mouse-1' fires.
+    (define-key map [header-line down-mouse-1] #'ignore)
+    (define-key map [header-line mouse-1] #'elfeed-header-button)
+    map)
+  "Keymap attached as a text property to header line buttons.")
+
 (defun elfeed--header-button (command &optional text help)
   "Create header line button for COMMAND with optional TEXT and HELP."
   (propertize (or text (symbol-name command))
               'elfeed-header-button command
               'help-echo (or help (format "Run `%s'" command))
-              'mouse-face 'highlight))
+              'mouse-face 'highlight
+              'keymap elfeed--header-button-keymap))
 
 (defun elfeed--header-log-button ()
   "Button to show the Elfeed log."

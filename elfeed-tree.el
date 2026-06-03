@@ -234,16 +234,16 @@ format (tag unread read)."
           (unless (hash-table-contains-p tag tags-ht)
             (puthash tag (list tag 0 0) tags-ht))
           (if unread
-              (incf (cadr (gethash tag tags-ht)))
-            (incf (caddr (gethash tag tags-ht)))))
+              (cl-incf (cadr (gethash tag tags-ht)))
+            (cl-incf (caddr (gethash tag tags-ht)))))
         ;; Collect feeds in feeds hash table.
         (unless (hash-table-contains-p feed-id feeds-ht)
           (puthash feed-id (list (elfeed-meta--title feed) 0 0 feed
                                  (elfeed-feed-autotags feed))
                    feeds-ht))
         (if unread
-            (incf (cadr (gethash feed-id feeds-ht)))
-          (incf (caddr (gethash feed-id feeds-ht))))))
+            (cl-incf (cadr (gethash feed-id feeds-ht)))
+          (cl-incf (caddr (gethash feed-id feeds-ht))))))
     (cons (hash-table-values feeds-ht) (hash-table-values tags-ht))))
 
 (defun elfeed-tree--build-nested (nodes)

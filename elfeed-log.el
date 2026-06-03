@@ -82,7 +82,7 @@ FMT must be a string suitable for `format' given OBJECTS as arguments."
                           (error 'elfeed-log-error-level-face)))
         (inhibit-read-only t))
     (when (eq level 'error)
-      (incf elfeed-log-error-count))
+      (cl-incf elfeed-log-error-count))
     (when (>= (elfeed-log--level-number level)
               (elfeed-log--level-number elfeed-log-level))
       (with-current-buffer log-buffer

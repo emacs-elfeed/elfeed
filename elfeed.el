@@ -573,10 +573,10 @@ URL identifies the feed and XML is the parsed content."
   (cl-typecase feed
     (list (let ((autotags (elfeed--plist-skip (cdr feed))))
             (and (stringp (car feed))
-                 (all (lambda (x)
-                        (and x (symbolp x) (not (keywordp x))))
-                      autotags)
-                 (evenp (- (length (cdr feed)) (length autotags))))))
+                 (cl-every (lambda (x)
+                             (and x (symbolp x) (not (keywordp x))))
+                           autotags)
+                 (cl-evenp (- (length (cdr feed)) (length autotags))))))
     (string t)))
 
 (defun elfeed-feed-list (&optional all)
@@ -615,13 +615,13 @@ feeds without the :no-update property."
 
 (defun elfeed-handle-http-error (url status)
   "Handle an http error during retrieval of URL with STATUS code."
-  (incf (elfeed-meta (elfeed-db-get-feed url) :failures 0))
+  (cl-incf (elfeed-meta (elfeed-db-get-feed url) :failures 0))
   (run-hook-with-args 'elfeed-http-error-hook url status)
   (elfeed-log 'error "%s: %S" url status))
 
 (defun elfeed-handle-parse-error (url error)
   "Handle parse error during parsing of URL with ERROR message."
-  (incf (elfeed-meta (elfeed-db-get-feed url) :failures 0))
+  (cl-incf (elfeed-meta (elfeed-db-get-feed url) :failures 0))
   (run-hook-with-args 'elfeed-parse-error-hook url error)
   (elfeed-log 'error "%s: %s" url error))
 
@@ -849,12 +849,12 @@ The returned function should be added to `elfeed-new-entry-hook'."
             (date (elfeed-entry-date entry))
             (case-fold-search t))
         (cl-labels ((match (r s)
-                    (pcase r
-                      (`nil t)
-                      (`(not ,r) (not (match r s)))
-                      (_ (if (stringp s)
-                             (string-match-p r s)
-                           (any (lambda (s) (string-match-p r s)) s))))))
+                      (pcase r
+                        (`nil t)
+                        (`(not ,r) (not (match r s)))
+                        (_ (if (stringp s)
+                               (string-match-p r s)
+                             (cl-some (lambda (s) (string-match-p r s)) s))))))
           (when (and
                  (match feed-title  (elfeed-feed-title  feed))
                  (match feed-url    (elfeed-feed-url    feed))

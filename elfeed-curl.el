@@ -389,7 +389,7 @@ URL is the requested resource."
         (unwind-protect
             (funcall cb result)
           ;; Always clean up
-          (when (zerop (decf elfeed-curl--refcount))
+          (when (zerop (cl-decf elfeed-curl--refcount))
             (kill-buffer)))))))
 
 (defun elfeed-curl--fail-callback (buffer cb)
@@ -398,7 +398,7 @@ The callback is run within BUFFER."
   (with-current-buffer buffer
     (unwind-protect
         (funcall cb nil)
-      (when (zerop (decf elfeed-curl--refcount))
+      (when (zerop (cl-decf elfeed-curl--refcount))
         (kill-buffer)))))
 
 (defun elfeed-curl--sentinel (process status)
@@ -504,7 +504,7 @@ curl invocation."
 (defun elfeed-curl--queue-wrap (cb)
   "Wrap the curl CB so that it operates the queue."
   (lambda (status)
-    (decf elfeed-curl-queue-active)
+    (cl-decf elfeed-curl-queue-active)
     (elfeed-curl--run-queue)
     (funcall cb status)))
 
@@ -522,7 +522,7 @@ curl invocation."
               elfeed-curl-queue)
     (cl-destructuring-bind (url cb headers method data) (pop elfeed-curl-queue)
       (elfeed-log 'debug "retrieve %s" url)
-      (incf elfeed-curl-queue-active 1)
+      (cl-incf elfeed-curl-queue-active 1)
       (elfeed-curl-retrieve
        url
        (if (functionp cb)

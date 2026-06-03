@@ -429,7 +429,7 @@ Links are relative to BASE-URL if non-nil."
         ;; HACK: Ensure that inserted images are not outdated, if the buffer content
         ;; has changed in the meantime.  There should be a better solution in Emacs.
         ;; See Emacs bug#80945 and https://github.com/emacs-elfeed/elfeed/issues/550.
-        (cl-letf* ((tick (incf elfeed--image-hack-tick))
+        (cl-letf* ((tick (cl-incf elfeed--image-hack-tick))
                    (orig (symbol-function 'url-queue-retrieve))
                    ((symbol-function 'url-queue-retrieve)
                     (lambda (url cb &rest args)

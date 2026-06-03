@@ -1399,7 +1399,7 @@ The update is delayed by `elfeed-search-live-delay'."
         (when-let* ((entry (get-text-property (point) 'elfeed-entry))
                     (title (elfeed-search--separator-title entry))
                     ((not (equal title last))))
-          (incf count)
+          (cl-incf count)
           (setq ov (make-overlay (pos-bol) (pos-bol)))
           (overlay-put ov 'category 'elfeed-search-separator)
           (overlay-put ov 'before-string

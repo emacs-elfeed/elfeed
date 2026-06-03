@@ -363,7 +363,7 @@
      (should (= (elfeed-meta entry :errors 10) 10))
      (setf (elfeed-meta feed :status) 'down
            (elfeed-meta entry :rating) 4)
-     (incf (elfeed-meta entry :errors 0))
+     (cl-incf (elfeed-meta entry :errors 0))
      (should (equal 'down (elfeed-meta feed :status)))
      (should (equal 4 (elfeed-meta entry :rating)))
      (should (= (elfeed-meta entry :errors) 1))

@@ -1423,6 +1423,43 @@ The update is delayed by `elfeed-search-live-delay'."
     ;; Delete unnecessary separator again if there is only a single one.
     (when (= count 1) (delete-overlay ov))))
 
+;; Functions to traverse separators
+(defun elfeed-search-next-separator (n)
+  "Move cursor to the next N separator.
+Positive N moves forward, negative N moves backward."
+  (interactive "p")
+  (unless (zerop n)
+    (let* ((bol (pos-bol))
+           (forward (> n 0))
+           (candidates
+            (sort
+             (delete-dups
+              (mapcar #'overlay-start
+                      (cl-remove-if-not
+                       (lambda (ov)
+                         (eq (overlay-get ov 'category)
+                             'elfeed-search-separator))
+                       (if forward
+                           (overlays-in bol (point-max))
+                         (overlays-in (point-min) bol)))))
+             #'<))
+           (current-candidate
+            (nth (if forward
+                 (abs n)
+               (1- (abs n)))
+                 (if forward
+                     candidates
+                   (reverse candidates)))))
+      (if current-candidate
+          (goto-char current-candidate)
+        (user-error "No separators left")))))
+
+(defun elfeed-search-previous-separator (n)
+  "Move cursor to the previous N separator.
+Positive N moves backward, negative N moves forward."
+  (interactive "p")
+  (elfeed-search-next-separator (- n)))
+
 ;; Bookmarks
 
 ;;;###autoload

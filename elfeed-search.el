@@ -1404,6 +1404,23 @@ The update is delayed by `elfeed-search-live-delay'."
                  (get nil 'elfeed-search-separator))
              entry)))
 
+(defun elfeed-search-set-separator-date-format (new-format)
+  "Set `elfeed-search-separator-date-format' to NEW-FORMAT.
+
+When called interactively, prompt for a NEW-FORMAT string.
+See `format-time-string' for format documentation."
+  (interactive
+   (list
+    (let ((new-format
+           (read-from-minibuffer
+            "Separator date format: "
+            (or elfeed-search-separator-date-format ""))))
+        new-format)))
+  (with-current-buffer (elfeed-search-buffer)
+    (setf elfeed-search-separator-date-format
+          (or new-format (default-value 'elfeed-search-separator-date-format)))
+    (elfeed-search-update :force)))
+
 (defun elfeed-search-add-separators ()
   "Add separators to the search buffer."
   (let ((last nil) (ov nil) (count 0))

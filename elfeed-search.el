@@ -245,7 +245,11 @@ When live editing the filter, it is bound to :live.")
   "+" #'elfeed-search-tag-all
   "-" #'elfeed-search-untag-all
   "<" #'elfeed-search-first-entry
-  ">" #'elfeed-search-last-entry)
+  ">" #'elfeed-search-last-entry
+  "<remap> <backward-paragraph>" #'elfeed-search-previous-separator
+  "<remap> <forward-paragraph>" #'elfeed-search-next-separator
+  "P" #'elfeed-search-previous-separator
+  "N" #'elfeed-search-next-separator)
 
 (easy-menu-define elfeed-search-mode-menu elfeed-search-mode-map
   "Menu for `elfeed-search-mode'."
@@ -1423,42 +1427,28 @@ The update is delayed by `elfeed-search-live-delay'."
     ;; Delete unnecessary separator again if there is only a single one.
     (when (= count 1) (delete-overlay ov))))
 
-;; Functions to traverse separators
-(defun elfeed-search-next-separator (n)
-  "Move cursor to the next N separator.
-Positive N moves forward, negative N moves backward."
+(defun elfeed-search-next-separator (&optional n)
+  "Move to the next Nth separator line.
+Positive N moves forward, negative N backward."
   (interactive "p")
-  (unless (zerop n)
-    (let* ((bol (pos-bol))
-           (forward (> n 0))
-           (candidates
-            (sort
-             (delete-dups
-              (mapcar #'overlay-start
-                      (cl-remove-if-not
-                       (lambda (ov)
-                         (eq (overlay-get ov 'category)
-                             'elfeed-search-separator))
-                       (if forward
-                           (overlays-in bol (point-max))
-                         (overlays-in (point-min) bol)))))
-             #'<))
-           (current-candidate
-            (nth (if forward
-                 (abs n)
-               (1- (abs n)))
-                 (if forward
-                     candidates
-                   (reverse candidates)))))
-      (if current-candidate
-          (goto-char current-candidate)
-        (user-error "No separators left")))))
+  (setq n (or n 1))
+  (goto-char (pos-bol))
+  (cl-loop repeat (abs n) do
+           (cl-loop until
+                    (or (/= 0 (forward-line (if (> n 0) 1 -1)))
+                        (cl-loop for ov in (overlays-in (pos-bol) (pos-bol))
+                                 thereis
+                                 (eq (overlay-get ov 'category)
+                                     'elfeed-search-separator)))))
+  (when (eobp)
+    (forward-line -1))
+  (recenter))
 
-(defun elfeed-search-previous-separator (n)
-  "Move cursor to the previous N separator.
+(defun elfeed-search-previous-separator (&optional n)
+  "Move cursor to the previous Nth separator.
 Positive N moves backward, negative N moves forward."
-  (interactive "p")
-  (elfeed-search-next-separator (- n)))
+  (interactive "p" elfeed-search-mode)
+  (elfeed-search-next-separator (- (or n 1))))
 
 ;; Bookmarks
 

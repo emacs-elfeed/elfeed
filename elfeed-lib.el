@@ -356,6 +356,7 @@ The relative URL algorithm is described in RFC 3986 §5.2.4."
   "Return full URL for maybe-relative NEW-URL based on full OLD-URL."
   (if (null new-url)
       old-url
+    (setq new-url (string-trim new-url))
     (let ((old (url-generic-parse-url old-url))
           (new (url-generic-parse-url new-url)))
       (cond

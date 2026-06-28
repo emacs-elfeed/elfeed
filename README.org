@@ -13,7 +13,7 @@
 #+html: <a href="https://snapshots.melpa.org/#/elfeed"><img alt="MELPA Snapshots" src="https://snapshots.melpa.org/packages/elfeed-badge.svg"/></a>
 
 Elfeed is an extensible web feed reader for Emacs, supporting Atom, RSS and JSON
-Feed. It requires Emacs 29.1 and is available for download from [[https://elpa.nongnu.org/packages/elfeed.html][ELPA]] or [[https://releases.melpa.org/#/elfeed][MELPA]].
+Feed. It requires Emacs 29.1 and is available for download from [[https://elpa.nongnu.org/nongnu/elfeed.html][ELPA]] or [[https://releases.melpa.org/#/elfeed][MELPA]].
 The Elfeed UI was inspired by [[https://notmuchmail.org/][notmuch]]. The database format is stable and is
 never expected to change.
 

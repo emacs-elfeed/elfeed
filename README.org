@@ -512,7 +512,7 @@ for compatibility are made.
 
 Many more extensions can be found on MELPA - here is an non-exhaustive list:
 
-- [[https://releases.melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
+- [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
 - [[https://github.com/rtrppl/cuckoo-search][cuckoo-search]]
 - [[https://github.com/benthamite/elfeed-ai][elfeed-ai]]
 - [[https://github.com/paulelms/elfeed-autotag][elfeed-autotag]]

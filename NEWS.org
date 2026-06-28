@@ -1,6 +1,6 @@
 #+title: Elfeed Changelog
 
-* Development
+* Version 4.1.0 (2026-06-28)
 
 - =elfeed-search-live-filter=: Use =while-no-input= for better responsiveness.
 - =elfeed-show-fetch-link=: Display message in the buffer during fetching.

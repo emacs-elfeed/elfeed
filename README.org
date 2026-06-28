@@ -9,11 +9,11 @@
 #+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://github.com/minad/corfu/blob/screenshots/emacs.svg?raw=true"/></a>
 #+html: <a href="https://elpa.nongnu.org/nongnu/elfeed.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/nongnu/elfeed.svg"/></a>
 #+html: <a href="https://elpa.nongnu.org/nongnu-devel/elfeed.html"><img alt="NonGNU-devel ELPA" src="https://elpa.nongnu.org/nongnu-devel/elfeed.svg"/></a>
-#+html: <a href="https://melpa.org/#/elfeed"><img alt="MELPA" src="https://melpa.org/packages/elfeed-badge.svg"/></a>
-#+html: <a href="https://stable.melpa.org/#/elfeed"><img alt="MELPA Stable" src="https://stable.melpa.org/packages/elfeed-badge.svg"/></a>
+#+html: <a href="https://releases.melpa.org/#/elfeed"><img alt="MELPA Releases" src="https://releases.melpa.org/packages/elfeed-badge.svg"/></a>
+#+html: <a href="https://snapshots.melpa.org/#/elfeed"><img alt="MELPA Snapshots" src="https://snapshots.melpa.org/packages/elfeed-badge.svg"/></a>
 
 Elfeed is an extensible web feed reader for Emacs, supporting Atom, RSS and JSON
-Feed. It requires Emacs 29.1 and is available for download from [[https://elpa.nongnu.org/packages/elfeed.html][ELPA]] or [[https://melpa.org/#/elfeed][MELPA]].
+Feed. It requires Emacs 29.1 and is available for download from [[https://elpa.nongnu.org/packages/elfeed.html][ELPA]] or [[https://releases.melpa.org/#/elfeed][MELPA]].
 The Elfeed UI was inspired by [[https://notmuchmail.org/][notmuch]]. The database format is stable and is
 never expected to change.
 
@@ -512,7 +512,7 @@ for compatibility are made.
 
 Many more extensions can be found on MELPA - here is an non-exhaustive list:
 
-- [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
+- [[https://releases.melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
 - [[https://github.com/rtrppl/cuckoo-search][cuckoo-search]]
 - [[https://github.com/benthamite/elfeed-ai][elfeed-ai]]
 - [[https://github.com/paulelms/elfeed-autotag][elfeed-autotag]]

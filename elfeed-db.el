@@ -329,10 +329,8 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
   (let ((table (make-hash-table :test #'eq)))
     (elfeed-db-visit (e)
       (dolist (tag (elfeed-entry-tags e))
-        (setf (gethash tag table) tag)))
-    (let ((tags ()))
-      (maphash (lambda (k _) (push k tags)) table)
-      (sort tags #'string<))))
+        (setf (gethash tag table) t)))
+    (sort (hash-table-keys table) #'string<)))
 
 ;; Saving and Loading:
 

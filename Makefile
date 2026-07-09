@@ -1,6 +1,6 @@
 .POSIX:
 EMACS   = emacs
-BATCH   = $(EMACS) -batch -q -L . -L tests
+BATCH   = $(EMACS) -batch -Q -L . -L tests
 
 EL   = elfeed-csv.el elfeed-curl.el elfeed-db.el elfeed-lib.el	\
        elfeed-log.el elfeed-show.el elfeed.el xml-query.el	\

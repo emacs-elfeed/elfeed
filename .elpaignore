@@ -1,4 +1,5 @@
 .elpaignore
+.github
 Makefile*
 UNLICENSE
 tests/

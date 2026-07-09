@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - '**.org'
+  pull_request:
+    paths-ignore:
+      - '**.org'
+  schedule:
+    - cron: "0 7 * * 0"
+
+permissions:
+  contents: read
+
+env:
+  EMACS: emacs -f package-activate-all
+
+jobs:
+  test:
+    name: 'Compile and Test'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # See https://github.com/purcell/setup-emacs/blob/master/.github/workflows/test.yml
+        emacs-version: [29.1, 30.1, release-snapshot] # 31.1, snapshot
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+      - name: Install Compat
+        run: emacs -Q -batch -eval "(progn (setq package-install-upgrade-built-in t) (package-refresh-contents) (package-install 'compat))"
+      - name: Byte compile all files
+        run: make compile
+      - name: Run compiled tests
+        run: make test

@@ -1,10 +1,10 @@
 .POSIX:
-EMACS   = emacs
+EMACS   ?= emacs
 BATCH   = $(EMACS) -batch -Q -L . -L tests
 
 EL   = elfeed-csv.el elfeed-curl.el elfeed-db.el elfeed-lib.el	\
        elfeed-log.el elfeed-show.el elfeed.el xml-query.el	\
-       elfeed-search.el elfeed-tree.el elfeed-link.el
+       elfeed-search.el elfeed-tree.el
 TEST = tests/elfeed-db-tests.el tests/elfeed-lib-tests.el       \
        tests/elfeed-tests.el tests/elfeed-search-tests.el       \
        tests/elfeed-curl-tests.el tests/xml-query-tests.el
@@ -13,7 +13,7 @@ compile: $(EL:.el=.elc) $(TEST:.el=.elc)
 
 check: test
 test: $(EL:.el=.elc) $(TEST:.el=.elc)
-	$(BATCH) -l tests/elfeed-tests.elc -f ert-run-tests-batch
+	$(BATCH) -l tests/elfeed-tests.elc -f ert-run-tests-batch-and-exit
 
 clean:
 	rm -f *.tar $(EL:.el=.elc) $(TEST:.el=.elc)

@@ -952,7 +952,7 @@ saved to your customization file."
               'elfeed--header-button command
               'keymap elfeed--header-button-map
               'help-echo (or help (format "Run `%s'" command))
-              'mouse-face 'highlight))
+              'mouse-face 'header-line-highlight))
 
 (defun elfeed--header-log-button ()
   "Button to show the Elfeed log."

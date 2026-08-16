@@ -100,7 +100,7 @@ old ~/.elfeed directory is present, it will be used instead."
   "Idle time in seconds until the database is saved.
 Database saving costs time and causes a small pause in Emacs.  Therefore
 defer saving if possible.  Set to nil to always save immediately."
-  :type '(choice (const nil) natum))
+  :type '(choice (const nil) natnum))
 
 (defvar elfeed-db nil
   "The core database for elfeed.")

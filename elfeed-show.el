@@ -623,7 +623,8 @@ content is stored in the entry metadata under the key :link-content."
             (insert (propertize "Fetching link...\n" 'face 'italic)))
            ((pred stringp)
             (elfeed-insert-html content (elfeed-compute-base url)))))))
-   :force force))
+   :force force
+   :headers `(("User-Agent" . ,elfeed-user-agent))))
 
 (defun elfeed-show-auto-fetch-link ()
   "Automatically fetch link content if the feed is marked with `:fetch-link'."
